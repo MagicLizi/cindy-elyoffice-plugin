@@ -5,7 +5,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { verifyManifest, countOccurrences, cmpVersion, requireAddress, kindOf } = require('../node/worker.cjs');
+const {
+  verifyManifest, countOccurrences, countAll, cmpVersion, requireAddress, kindOf,
+  withLoginName, launchCommand, expandAddresses, planTable,
+} = require('../node/worker.cjs');
 
 const NAME = 'ely-office-windows-x86_64.json';
 const manifest = fs.readFileSync(path.join(__dirname, 'fixtures', NAME), 'utf8');
@@ -59,5 +62,67 @@ test('compares versions numerically and routes files by extension', () => {
   assert.equal(kindOf('C:/a/Report.DOCX'), 'word');
   assert.equal(kindOf('/a/b.xls'), 'excel');
   assert.equal(kindOf('/a/b.pptx'), 'ppt');
-  assert.equal(kindOf('/a/b.pdf'), null);
+  assert.equal(kindOf('/a/Notes.MD'), 'markdown');
+  assert.equal(kindOf('/a/b.pdf'), 'pdf');
+  assert.equal(kindOf('/a/b.txt'), null);
+});
+
+// 依据：2026-11-24 实测，Cindy 给插件后台的环境变量白名单不含 USERNAME，插件拉起的
+// ElyTable 报「no USERNAME: environment variable not found」后起不来，open_document 一直超时。
+test('adds the login name ElyOffice needs to the trimmed plugin environment', () => {
+  const user = () => ({ username: 'Lizi' });
+  const win = withLoginName({ PATH: 'C:\\Windows', SystemRoot: 'C:\\Windows' }, 'win32', user);
+  assert.equal(win.USERNAME, 'Lizi');
+  assert.equal(win.PATH, 'C:\\Windows');
+  assert.equal(withLoginName({ USERNAME: 'Other' }, 'win32', user).USERNAME, 'Other', 'keeps an existing value');
+  const mac = withLoginName({}, 'darwin', user);
+  assert.deepEqual([mac.USER, mac.LOGNAME], ['Lizi', 'Lizi']);
+  const noUser = withLoginName({ PATH: 'x' }, 'win32', () => { throw new Error('no account'); });
+  assert.deepEqual(noUser, { PATH: 'x' });
+});
+
+test('passes --new-window only to apps that have several windows', () => {
+  const app = { launcher: 'D:\\Ely\\ely-table-start.exe', exe: 'D:\\Ely\\ely-table.exe' };
+  // 实测：ElyOffice 的启动器把 --new-window 交给运行中的实例，日志为「new window true」。
+  assert.deepEqual(launchCommand('excel', app, 'E:\\a.xlsx', { newWindow: true, platform: 'win32' }), {
+    cmd: app.launcher, args: ['ely-table', 'ElyTable', '--new-window', 'E:\\a.xlsx'],
+  });
+  // 实测：ElyMark 只有一个窗口，带上这个参数后文件根本没有打开。
+  const mark = { launcher: 'D:\\Ely\\ely-mark-start.exe', exe: 'D:\\Ely\\ely-mark.exe' };
+  assert.deepEqual(launchCommand('markdown', mark, 'E:\\a.md', { newWindow: true, platform: 'win32' }).args, ['ely-mark', 'ElyMark', 'E:\\a.md']);
+  const macApp = { appPath: '/Applications/ElyTable.app', exe: '/Applications/ElyTable.app/Contents/MacOS/ely-table' };
+  assert.deepEqual(launchCommand('excel', macApp, '/a.xlsx', { platform: 'darwin' }), { cmd: '/usr/bin/open', args: ['-a', macApp.appPath, '/a.xlsx'] });
+  assert.deepEqual(launchCommand('excel', macApp, '/a.xlsx', { newWindow: true, platform: 'darwin' }), { cmd: macApp.exe, args: ['--new-window', '/a.xlsx'] });
+});
+
+test('counts Markdown matches across lines, like ElyMark replace', () => {
+  assert.equal(countAll('- a\n- b\n- a\n- b', '- a\n- b'), 2);
+  assert.equal(countAll('aaaa', 'aa'), 2, 'non-overlapping');
+  assert.equal(countAll('abc', 'x'), 0);
+});
+
+test('expands cell ranges row by row and enforces the per-call limit', () => {
+  assert.deepEqual(expandAddresses(['支出预算!A1:B2', "'My Sheet'!$C$3"]), [
+    '支出预算!A1', '支出预算!B1', '支出预算!A2', '支出预算!B2', "'My Sheet'!C3",
+  ]);
+  assert.deepEqual(expandAddresses(['S!B2:A1']), ['S!A1', 'S!B1', 'S!A2', 'S!B2'], 'reversed corners');
+  assert.deepEqual(expandAddresses(['S!Z1:AB1']), ['S!Z1', 'S!AA1', 'S!AB1']);
+  assert.throws(() => expandAddresses(['S!A1:Z20']), (e) => e.errorCode === 'INVALID_ARGS', '520 cells');
+  assert.throws(() => expandAddresses(['A1:B2']), (e) => e.errorCode === 'INVALID_ADDRESS');
+});
+
+test('plans a table write from one anchor cell, skipping nulls', () => {
+  const plan = planTable('支出预算!B2', [['分类', '预算'], ['餐饮', 2000, null, '=C3-B3'], [true]]);
+  assert.equal(plan.range, '支出预算!B2:E4');
+  assert.equal(plan.skipped, 1);
+  assert.deepEqual(plan.cells.map((c) => [c.address, c.value]), [
+    ['支出预算!B2', '分类'], ['支出预算!C2', '预算'],
+    ['支出预算!B3', '餐饮'], ['支出预算!C3', '2000'], ['支出预算!E3', '=C3-B3'],
+    ['支出预算!B4', 'TRUE'],
+  ]);
+  assert.throws(() => planTable('S!A1:B2', [['x']]), (e) => e.errorCode === 'INVALID_ADDRESS');
+  assert.throws(() => planTable('S!A1', [[null]]), (e) => e.errorCode === 'INVALID_ARGS');
+  assert.throws(() => planTable('S!A1', [[{}]]), (e) => e.errorCode === 'INVALID_ARGS');
+  const big = Array.from({ length: 26 }, () => Array.from({ length: 20 }, () => 1));
+  assert.throws(() => planTable('S!A1', big), (e) => e.errorCode === 'INVALID_ARGS' && /520/.test(e.message));
 });

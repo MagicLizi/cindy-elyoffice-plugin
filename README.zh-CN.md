@@ -3,7 +3,7 @@
 把 [ElyOffice](https://github.com/ELY-Open-Source/ElyOffice)（免费、开源、离线的办公软件）接进 [Cindy](https://github.com/makecindy/cindy) 的插件。
 
 - **一键安装**：在插件设置里点一下，就会装好最新版 ElyOffice，不用自己找、自己下。
-- **AI 直接在你看着的窗口里改**：让 Cindy 改 Word、Excel、PPT，改动马上出现在 ElyOffice 窗口里，每一处都能按 Ctrl+Z 撤销；保存由你决定，也可以打开自动保存。
+- **AI 直接在你看着的窗口里写、里改**：让 Cindy 新建或修改 Word、Excel、PPT、Markdown，改动马上出现在 ElyOffice 窗口里，每一处都能按 Ctrl+Z 撤销；保存由你决定，也可以打开自动保存。PDF 可以用 ElyPDF 打开查看。
 
 ## 在 Cindy 里打开 Office 文件
 
@@ -17,6 +17,9 @@
 - 「把这份文档里的 TODO 改成 1280，负责人改成李四。」
 - 「Sheet1 的 B3 填 60，B4 写利润公式。」
 - 「把每页幻灯片上的日期都改成 2026 年。」
+- 「在 ElyOffice 里新建一个 11 月预算表，分概览、支出预算、收支明细三张表，把示例数据填进去。」
+- 「写一份会议纪要的 Word，在 ElyOffice 里打开给我看。」
+- 「把刚才做好的表格复制到桌面，用 ElyOffice 打开，我接着改。」
 
 ## 安装 ElyOffice
 
@@ -39,19 +42,21 @@ ElyOffice 装好后约占 1 GB，并会在开机时启动文档引擎，让打�
 | 工具 | 作用 |
 | --- | --- |
 | `elyoffice_status` | 是否已安装、版本号、当前打开了哪些文件 |
-| `open_document` | 用 ElyOffice 打开 Word、Excel、PPT 文件 |
-| `read_document` | 读取 Word 正文或每页幻灯片的文字 |
-| `replace_text` | 替换 Word 或 PPT 里的文字 |
-| `read_cells` / `write_cells` | 读写 Excel 单元格，支持公式 |
+| `open_document` | 用 ElyOffice 打开 Word、Excel、PPT、Markdown 或 PDF 文件，可选新窗口 |
+| `create_document` | 新建 Word（带段落和标题）、Excel（带多张工作表）、PPT（带每页文字）或 Markdown 并打开；也可以复制一份已做好的文档再打开 |
+| `read_document` | 读取 Word 正文、每页幻灯片的文字或 Markdown 原文 |
+| `replace_text` | 替换 Word、PPT 或 Markdown 里的文字（Markdown 可跨行） |
+| `read_cells` / `write_cells` | 读写 Excel 单元格或区域，支持公式 |
+| `write_table` | 从一格起整片写入表头和多行数据，并检查公式结果 |
 | `save_document` | 保存文件，只在你要求时使用 |
 
 AI 的完整使用流程、保存规则和错误处理写在随包手册里（`manual/guide`）。
 
-**能力边界**：ElyOffice 的命令行只能改文字和单元格，不能改格式、增删段落、表格行或幻灯片，也读不到脚注、批注、文本框和演讲者备注。插件只能处理它所在这台电脑上的文件。
+**能力边界**：ElyOffice 窗口里几乎什么都能做，但它开放给外部程序的命令行只有读写文字、单元格和保存，插件用到的就是这部分的全部能力。所以文档打开后，AI 只能改文字和单元格；改格式、增删段落、工作表、表格行或幻灯片这些，ElyOffice 本身能做，只是还没开放给 AI，可以在窗口里手动做。AI 也读不到脚注、批注、文本框和演讲者备注。新建时要一次给全工作表、段落和幻灯片。需要排版和配色的文档，可以先用其他工具做好，再让插件复制一份用 ElyOffice 打开。PDF 只能查看。插件只能处理它所在这台电脑上的文件。
 
 ## 权限
 
-- **运行本机程序**（Node 后台）：检测 ElyOffice、运行它的安装程序，以及调用 `ely-doc` / `ely-table` / `ely-show` 命令行。
+- **运行本机程序**（Node 后台）：检测 ElyOffice、运行它的安装程序，调用 `ely-doc` / `ely-table` / `ely-show` / `ely-mark` 命令行，以及在你或 AI 指定的位置新建文件（不会覆盖已有文件）。
 - **网络**：`github.com`、`api.github.com` 和 GitHub 的发布下载域名，用于检查版本、下载 ElyOffice。
 - **通知**：安装完成时提醒你。
 
@@ -65,4 +70,4 @@ node --test test/*.test.cjs
 
 ## 许可证
 
-本插件使用 Apache-2.0 许可证。ElyOffice 是独立项目，使用 MIT 许可证，其中的第三方组件沿用各自的许可证（例如 ElyPDF 使用的 MuPDF 是 AGPL-3.0）。本插件不分发 ElyOffice，而是从 ElyOffice 官方发布页下载。插件图标是 [ElyOffice 仓库](https://github.com/ELY-Open-Source/ElyOffice)中的 ElyOffice 标志，归 ElyOffice 项目所有。
+本插件使用 Apache-2.0 许可证。ElyOffice 是独立项目，使用 MIT 许可证，其中的第三方组件沿用各自的许可证（例如 ElyPDF 使用的 MuPDF 是 AGPL-3.0）。本插件不分发 ElyOffice，而是从 ElyOffice 官方发布页下载；只随包带了 ElyOffice 的三个空白文件（`templates/`，MIT 许可证，来源见其中的 README），用作新建文档的底稿。插件图标是 [ElyOffice 仓库](https://github.com/ELY-Open-Source/ElyOffice)中的 ElyOffice 标志，归 ElyOffice 项目所有。

@@ -3,7 +3,7 @@
  * ElyOffice 插件的本机后台（JSON-RPC over stdio，一行一个消息）。
  *
  * 负责：检测 ElyOffice 安装、核对官方版本清单签名、运行 / 跟踪安装与卸载、
- * 调用 ely-doc / ely-table / ely-show 命令行读改已打开的文档。
+ * 新建文档，调用 ely-doc / ely-table / ely-show / ely-mark 命令行读改已打开的文档。
  * 业务失败一律以 { ok:false, errorCode, message } 作为 result 返回；
  * JSON-RPC error 只用于协议层问题。stdout 只写协议消息，日志写 stderr。
  */
@@ -15,6 +15,7 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const { execFile, spawn } = require('node:child_process');
+const ooxml = require('./ooxml.cjs');
 
 const REPO = 'ELY-Open-Source/ElyOffice';
 const DOWNLOAD_PREFIX = `https://github.com/${REPO}/releases/download/`;
@@ -25,18 +26,32 @@ const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 
 const APPS = {
   word: {
-    slug: 'ely-doc', name: 'ElyDoc', verb: 'text', label: 'Word 文档',
+    slug: 'ely-doc', name: 'ElyDoc', verb: 'text', label: 'Word 文档', multiWindow: true,
     exts: ['.docx', '.doc', '.docm', '.dotx', '.dotm', '.dot', '.odt', '.fodt', '.rtf'],
   },
   excel: {
-    slug: 'ely-table', name: 'ElyTable', verb: 'cell', label: 'Excel 表格',
+    slug: 'ely-table', name: 'ElyTable', verb: 'cell', label: 'Excel 表格', multiWindow: true,
     exts: ['.xlsx', '.xls', '.xlsm', '.xltx', '.xltm', '.ods', '.fods', '.csv'],
   },
   ppt: {
-    slug: 'ely-show', name: 'ElyShow', verb: 'text', label: 'PPT 演示文稿',
+    slug: 'ely-show', name: 'ElyShow', verb: 'text', label: 'PPT 演示文稿', multiWindow: true,
     exts: ['.pptx', '.ppt', '.pptm', '.potx', '.potm', '.ppsx', '.pps', '.odp', '.fodp'],
   },
+  markdown: {
+    // ElyMark 只有一个窗口，不认 --new-window。
+    slug: 'ely-mark', name: 'ElyMark', verb: 'text', label: 'Markdown 文档', multiWindow: false,
+    exts: ['.md', '.markdown'],
+  },
+  // ElyPDF 没有命令行，只能打开给用户看。
+  pdf: {
+    slug: 'ely-pdf', name: 'ElyPDF', verb: null, label: 'PDF', multiWindow: true,
+    exts: ['.pdf'],
+  },
 };
+// 有命令行、能读改的应用。
+const EDITABLE_KINDS = Object.keys(APPS).filter((k) => APPS[k].verb);
+// 能新建的格式：Word / Excel / PPT 以 ElyOffice 自带的空白文件为底，Markdown 是纯文字。
+const CREATABLE = { '.docx': 'word', '.xlsx': 'excel', '.pptx': 'ppt', '.md': 'markdown', '.markdown': 'markdown' };
 const ALL_APP_NAMES = ['ElyDoc', 'ElyTable', 'ElyShow', 'ElyPDF', 'ElyMail', 'ElyTree', 'ElyMark'];
 const GUI_SLUGS = ['ely-doc', 'ely-table', 'ely-show', 'ely-pdf', 'ely-mail', 'ely-tree', 'ely-mark'];
 const SLUG_TO_NAME = {
@@ -62,12 +77,39 @@ class BizError extends Error {
 
 // ───────────────────────── 通用工具 ─────────────────────────
 
+// Cindy 只给插件后台传一份精简的环境变量，里面没有登录名（Windows 的 USERNAME，
+// macOS / Linux 的 USER、LOGNAME）。ElyOffice 的文档引擎启动时要读它，缺了就报
+// 「no USERNAME」起不来。启动 ElyOffice 和调它的命令行时，从系统账户信息补上。
+function withLoginName(base, platform = process.platform, userInfo = os.userInfo) {
+  const env = { ...base };
+  let name = null;
+  try {
+    name = userInfo().username || null;
+  } catch {
+    name = null;
+  }
+  if (!name) return env;
+  if (platform === 'win32') {
+    if (!env.USERNAME) env.USERNAME = name;
+  } else {
+    if (!env.USER) env.USER = name;
+    if (!env.LOGNAME) env.LOGNAME = name;
+  }
+  return env;
+}
+
+let childEnvCache = null;
+function childEnv() {
+  if (!childEnvCache) childEnvCache = withLoginName(process.env);
+  return childEnvCache;
+}
+
 function run(file, args, { timeoutMs = 60000 } = {}) {
   return new Promise((resolve) => {
     execFile(
       file,
       args,
-      { windowsHide: true, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, encoding: 'utf8' },
+      { windowsHide: true, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, encoding: 'utf8', env: childEnv() },
       (error, stdout, stderr) => {
         let code = 0;
         let spawnError = null;
@@ -138,8 +180,17 @@ function normalizePath(p) {
   return path.resolve(s);
 }
 
+function realOrSelf(p) {
+  try {
+    return fs.realpathSync.native(p);
+  } catch {
+    return p;
+  }
+}
+
+// 同一个文件可能经链接或不同大小写的路径传进来，ElyOffice 报回的是它自己解析后的路径。
 function samePath(a, b) {
-  return normalizePath(a) === normalizePath(b);
+  return normalizePath(a) === normalizePath(b) || normalizePath(realOrSelf(a)) === normalizePath(realOrSelf(b));
 }
 
 function kindOf(file) {
@@ -306,13 +357,14 @@ async function requireApp(kind) {
 // ───────────────────────── 命令行调用 ─────────────────────────
 
 function isNotRunning(text) {
-  return /10061|10054|refused|积极拒绝|强迫关闭|os error 2\b|os error 61\b|os error 111\b|No such file or directory/i.test(text);
+  // ElyMark 没开时直接说「ElyMark is not running」，其余应用报连接被拒。
+  return /10061|10054|refused|积极拒绝|强迫关闭|os error 2\b|os error 61\b|os error 111\b|No such file or directory|is not running/i.test(text);
 }
 
 async function listDocs(kind) {
   const det = await detect();
   const app = det.apps[kind];
-  if (!app || !app.exe) return { running: false, docs: [] };
+  if (!app || !app.exe || !APPS[kind].verb) return { running: false, docs: [] };
   const res = await run(app.exe, [APPS[kind].verb, 'docs'], { timeoutMs: 15000 });
   if (res.code === 0) {
     const docs = res.stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
@@ -328,45 +380,54 @@ async function findOpenPath(kind, file) {
   return docs.find((d) => samePath(d, file)) || null;
 }
 
-function launchApp(kind, app, file) {
+function launchCommand(kind, app, file, { newWindow = false, platform = process.platform } = {}) {
   const meta = APPS[kind];
-  let cmd;
-  let args;
-  if (process.platform === 'darwin') {
-    cmd = '/usr/bin/open';
-    args = ['-a', app.appPath, file];
-  } else if (process.platform === 'win32' && app.launcher) {
-    // 与 ElyOffice 安装时登记的「打开方式」命令一致：<slug>-start.exe <slug> <Name> "<file>"
-    cmd = app.launcher;
-    args = [meta.slug, meta.name, file];
-  } else {
-    cmd = app.exe;
-    args = [file];
+  const extra = newWindow && meta.multiWindow ? ['--new-window'] : [];
+  if (platform === 'darwin') {
+    // 经 open 打开时 ElyOffice 不认 --new-window，要新窗口就直接运行程序。
+    return newWindow ? { cmd: app.exe, args: [...extra, file] } : { cmd: '/usr/bin/open', args: ['-a', app.appPath, file] };
   }
+  if (platform === 'win32' && app.launcher) {
+    // 与 ElyOffice 安装时登记的「打开方式」命令一致：<slug>-start.exe <slug> <Name> "<file>"
+    return { cmd: app.launcher, args: [meta.slug, meta.name, ...extra, file] };
+  }
+  return { cmd: app.exe, args: [...extra, file] };
+}
+
+function launchApp(kind, app, file, options) {
+  const { cmd, args } = launchCommand(kind, app, file, options);
   // GUI 程序不能带 windowsHide，否则首个窗口可能被隐藏。
-  const child = spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: false });
-  child.on('error', (error) => log('launch failed', meta.name, error.message));
+  const child = spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: false, env: childEnv() });
+  child.on('error', (error) => log('launch failed', APPS[kind].name, error.message));
   child.unref();
 }
 
-async function openDocument(file, { waitMs = 60000 } = {}) {
+const SUPPORTED_TYPES = 'Word、Excel、PPT、Markdown 或 PDF';
+
+async function openDocument(file, { waitMs = 60000, newWindow = false } = {}) {
   const p = requireAbsoluteFile(file);
   const kind = kindOf(p);
   if (!kind) {
     throw new BizError(
       'UNSUPPORTED_FILE_TYPE',
-      `ElyOffice 插件只处理 Word、Excel、PPT 文件，「${path.basename(p)}」不在其中。`,
+      `ElyOffice 插件只处理 ${SUPPORTED_TYPES} 文件，「${path.basename(p)}」不在其中。`,
     );
   }
   const app = await requireApp(kind);
+  const note = newWindow && !APPS[kind].multiWindow ? { newWindowIgnored: `${APPS[kind].name} 只有一个窗口，已在原窗口打开。` } : {};
+  if (!APPS[kind].verb) {
+    // 没有命令行的应用（ElyPDF）无法确认是否已打开，拉起后直接返回。
+    launchApp(kind, app, p, { newWindow });
+    return { kind, app: APPS[kind].name, path: p, launched: true, readable: false, ...note };
+  }
   const already = await findOpenPath(kind, p);
-  launchApp(kind, app, p); // 已打开时 ElyOffice 会把那个窗口提到前面
-  if (already) return { kind, app: APPS[kind].name, path: already, alreadyOpen: true, openedNow: false };
+  launchApp(kind, app, p, { newWindow }); // 已打开时 ElyOffice 会把那个窗口提到前面
+  if (already) return { kind, app: APPS[kind].name, path: already, alreadyOpen: true, openedNow: false, ...note };
   const started = Date.now();
   while (Date.now() - started < waitMs) {
     await sleep(700);
     const found = await findOpenPath(kind, p).catch(() => null);
-    if (found) return { kind, app: APPS[kind].name, path: found, alreadyOpen: false, openedNow: true };
+    if (found) return { kind, app: APPS[kind].name, path: found, alreadyOpen: false, openedNow: true, ...note };
   }
   throw new BizError(
     'OPEN_TIMEOUT',
@@ -379,7 +440,7 @@ async function openDocument(file, { waitMs = 60000 } = {}) {
 async function launchDocument(file) {
   const p = requireAbsoluteFile(file);
   const kind = kindOf(p);
-  if (!kind) throw new BizError('UNSUPPORTED_FILE_TYPE', `「${path.basename(p)}」不是 Word、Excel 或 PPT 文件。`);
+  if (!kind) throw new BizError('UNSUPPORTED_FILE_TYPE', `「${path.basename(p)}」不是 ${SUPPORTED_TYPES} 文件。`);
   const app = await requireApp(kind);
   launchApp(kind, app, p);
   return { kind, app: APPS[kind].name, launched: true };
@@ -389,8 +450,8 @@ async function ensureOpen(file, expectKinds) {
   const p = requireAbsoluteFile(file);
   const kind = kindOf(p);
   if (!kind || (expectKinds && !expectKinds.includes(kind))) {
-    const want = (expectKinds || Object.keys(APPS)).map((k) => APPS[k].label).join('或');
-    throw new BizError('UNSUPPORTED_FILE_TYPE', `这个操作只适用于${want}，「${path.basename(p)}」不是。`);
+    const want = (expectKinds || Object.keys(APPS)).map((k) => APPS[k].label).join('、');
+    throw new BizError('UNSUPPORTED_FILE_TYPE', `这个操作只适用于 ${want}，「${path.basename(p)}」不是。`);
   }
   await requireApp(kind);
   const open = await findOpenPath(kind, p);
@@ -411,6 +472,12 @@ function cliFailure(kind, res, action) {
     return new BizError(
       'DISK_CHANGED',
       `文件在打开后被别的程序改过，${APPS[kind].name} 没有覆盖它。请让用户在 ElyOffice 窗口里决定保留哪个版本。`,
+    );
+  }
+  if (/shows as a preview/i.test(text)) {
+    return new BizError(
+      'MARKDOWN_PREVIEW',
+      'ElyMark 正以预览模式显示这个文件，预览里不能改。请用户切到编辑或源码模式（Ctrl+/，macOS 为 Cmd+/）后再试。',
     );
   }
   if (res.timedOut) return new BizError('ELYOFFICE_TIMEOUT', `${APPS[kind].name} ${action}超时，请稍后再试。`);
@@ -436,10 +503,22 @@ function countOccurrences(text, find) {
   return n;
 }
 
+// ElyMark 的替换对整篇 Markdown 原文逐处匹配（可跨行），不按段落切开。
+function countAll(text, find) {
+  let n = 0;
+  let i = String(text).indexOf(find);
+  while (i !== -1) {
+    n += 1;
+    i = text.indexOf(find, i + find.length);
+  }
+  return n;
+}
+
 const MAX_TEXT_CHARS = 200000;
+const TEXT_KINDS = ['word', 'ppt', 'markdown'];
 
 async function readDocument(file) {
-  const { kind, path: p, openedNow } = await ensureOpen(file, ['word', 'ppt']);
+  const { kind, path: p, openedNow } = await ensureOpen(file, TEXT_KINDS);
   const raw = await cli(kind, ['get', p], '读取内容');
   const text = raw.replace(/\r\n/g, '\n').replace(/\n$/, '');
   const truncated = text.length > MAX_TEXT_CHARS;
@@ -462,16 +541,21 @@ async function replaceText(file, replacements) {
     if (!r || typeof r.find !== 'string' || !r.find || typeof r.replace !== 'string') {
       throw new BizError('INVALID_ARGS', '每项替换都要有非空的 find 和字符串 replace。');
     }
-    if (/[\r\n\f]/.test(r.find) || /[\r\n\f]/.test(r.replace)) {
-      throw new BizError('INVALID_ARGS', 'ElyOffice 只能在同一段内替换文字，find 和 replace 不能包含换行。');
+  }
+  const { kind, path: p, openedNow } = await ensureOpen(file, TEXT_KINDS);
+  const markdown = kind === 'markdown';
+  if (!markdown) {
+    for (const r of replacements) {
+      if (/[\r\n\f]/.test(r.find) || /[\r\n\f]/.test(r.replace)) {
+        throw new BizError('INVALID_ARGS', 'Word 和 PPT 只能在同一段内替换文字，find 和 replace 不能包含换行。');
+      }
     }
   }
-  const { kind, path: p, openedNow } = await ensureOpen(file, ['word', 'ppt']);
-  const notFound = '文档里没有找到这段文字（区分大小写，不跨段）';
+  const notFound = markdown ? '文档里没有找到这段文字（区分大小写）' : '文档里没有找到这段文字（区分大小写，不跨段）';
   const results = [];
   for (const r of replacements) {
     const before = await cli(kind, ['get', p], '读取内容');
-    const count = countOccurrences(before, r.find);
+    const count = markdown ? countAll(before, r.find) : countOccurrences(before, r.find);
     if (count === 0) {
       results.push({ find: r.find, replace: r.replace, replaced: 0, note: notFound });
       continue;
@@ -501,6 +585,72 @@ function requireAddress(address) {
   return address.trim();
 }
 
+// 一次读写的单元格上限：ElyTable 每格约 30 毫秒，500 格约 15 秒，在工具调用时限内。
+const MAX_CELLS = 500;
+const MAX_COLUMN = 16384; // XFD
+const MAX_ROW = 1048576;
+
+function columnNumber(letters) {
+  let n = 0;
+  for (const ch of letters.toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n;
+}
+
+function columnLetters(n) {
+  let s = '';
+  for (let x = n; x > 0; x = Math.floor((x - 1) / 26)) s = String.fromCharCode(65 + ((x - 1) % 26)) + s;
+  return s;
+}
+
+/** 把 Sheet1!A1 或 Sheet1!A1:C3 拆成 { sheet, c1, r1, c2, r2 }。 */
+function parseRange(address) {
+  const a = requireAddress(address);
+  const m = a.match(/^(.+)!\$?([A-Za-z]{1,3})\$?(\d+)(?::\$?([A-Za-z]{1,3})\$?(\d+))?$/);
+  if (!m) throw new BizError('INVALID_ADDRESS', `单元格地址「${address}」不对：列用字母、行用数字，如 Sheet1!B2 或 Sheet1!A1:F20。`);
+  const c1 = columnNumber(m[2]);
+  const r1 = Number(m[3]);
+  const c2 = m[4] ? columnNumber(m[4]) : c1;
+  const r2 = m[5] ? Number(m[5]) : r1;
+  for (const [c, r] of [[c1, r1], [c2, r2]]) {
+    if (c < 1 || c > MAX_COLUMN || r < 1 || r > MAX_ROW) {
+      throw new BizError('INVALID_ADDRESS', `单元格地址「${address}」超出了表格范围（最多到 XFD 列、第 1048576 行）。`);
+    }
+  }
+  return { sheet: m[1], c1: Math.min(c1, c2), r1: Math.min(r1, r2), c2: Math.max(c1, c2), r2: Math.max(r1, r2) };
+}
+
+function cellAddress(sheet, col, row) {
+  return `${sheet}!${columnLetters(col)}${row}`;
+}
+
+/** 把地址列表（可含区域）展开成逐格地址，按行优先，超过上限即报错。 */
+function expandAddresses(addresses, limit = MAX_CELLS) {
+  const out = [];
+  for (const address of addresses) {
+    const r = parseRange(address);
+    const count = (r.c2 - r.c1 + 1) * (r.r2 - r.r1 + 1);
+    if (out.length + count > limit) {
+      throw new BizError('INVALID_ARGS', `一次最多读 ${limit} 个单元格，这次要读的超过了，请把区域分成几次读。`);
+    }
+    for (let row = r.r1; row <= r.r2; row += 1) {
+      for (let col = r.c1; col <= r.c2; col += 1) out.push(cellAddress(r.sheet, col, row));
+    }
+  }
+  return out;
+}
+
+const FORMULA_ERROR = /^(#[A-Z0-9/]+[!?]?|#N\/A|Err:\d+)$/;
+
+function cellValue(value, where) {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new BizError('INVALID_ARGS', `${where} 的数字无效。`);
+    return String(value);
+  }
+  if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
+  if (typeof value === 'string') return value;
+  throw new BizError('INVALID_ARGS', `${where} 要是文字、数字、TRUE/FALSE，或以 = 开头的公式。`);
+}
+
 async function getCell(p, address) {
   const out = await cli('excel', ['get', p, address], `读取 ${address} `);
   try {
@@ -510,12 +660,29 @@ async function getCell(p, address) {
   }
 }
 
+async function setCell(p, address, value, done) {
+  const app = await requireApp('excel');
+  const res = await run(app.exe, [APPS.excel.verb, 'set', p, address, value], { timeoutMs: 60000 });
+  if (res.code === 0) return;
+  const error = /undo history did not move/i.test(res.stderr)
+    ? new BizError(
+      'WRITE_FAILED',
+      `ElyTable 没有写进 ${address}：最常见的原因是工作表「${address.slice(0, address.lastIndexOf('!'))}」不存在（插件不能新增工作表），或这一格所在的工作表受保护。`,
+    )
+    : cliFailure('excel', res, `写入 ${address} `);
+  if (done > 0) {
+    error.message += `（这次已经写好前 ${done} 格，可以在 ElyTable 里按 Ctrl+Z 逐格撤销。）`;
+    error.detail = { written: done, failedAt: address };
+  }
+  throw error;
+}
+
 async function readCells(file, addresses) {
   if (!Array.isArray(addresses) || addresses.length === 0) {
-    throw new BizError('INVALID_ARGS', 'addresses 至少要有一个单元格地址，如 ["Sheet1!A1"]。');
+    throw new BizError('INVALID_ARGS', 'addresses 至少要有一个单元格地址，如 ["Sheet1!A1"] 或 ["Sheet1!A1:F20"]。');
   }
-  if (addresses.length > 200) throw new BizError('INVALID_ARGS', '一次最多读取 200 个单元格。');
-  const list = addresses.map(requireAddress);
+  if (addresses.length > 200) throw new BizError('INVALID_ARGS', '一次最多给 200 个地址或区域。');
+  const list = expandAddresses(addresses);
   const { path: p, openedNow } = await ensureOpen(file, ['excel']);
   const cells = [];
   for (const address of list) cells.push(await getCell(p, address));
@@ -526,26 +693,77 @@ async function writeCells(file, cells) {
   if (!Array.isArray(cells) || cells.length === 0) {
     throw new BizError('INVALID_ARGS', 'cells 至少要有一项 { address, value }。');
   }
-  if (cells.length > 200) throw new BizError('INVALID_ARGS', '一次最多写入 200 个单元格，请分批进行。');
-  const list = cells.map((c) => {
-    if (!c || (typeof c.value !== 'string' && typeof c.value !== 'number' && typeof c.value !== 'boolean')) {
-      throw new BizError('INVALID_ARGS', '每项都要有 address 和 value（文字、数字或以 = 开头的公式）。');
-    }
-    return { address: requireAddress(c.address), value: String(c.value) };
+  if (cells.length > 200) throw new BizError('INVALID_ARGS', '一次最多写入 200 个单元格；整片写入请用 write_table。');
+  const list = cells.map((c, i) => {
+    if (!c) throw new BizError('INVALID_ARGS', '每项都要有 address 和 value（文字、数字或以 = 开头的公式）。');
+    const address = requireAddress(c.address);
+    if (address.includes(':')) throw new BizError('INVALID_ADDRESS', `write_cells 一项只写一格，「${address}」是区域；整片写入请用 write_table。`);
+    return { address, value: cellValue(c.value, `第 ${i + 1} 项`) };
   });
   const { path: p, openedNow } = await ensureOpen(file, ['excel']);
   const written = [];
   for (const c of list) {
-    await cli('excel', ['set', p, c.address, c.value], `写入 ${c.address} `);
+    await setCell(p, c.address, c.value, written.length);
     written.push(await getCell(p, c.address));
   }
   return { kind: 'excel', app: 'ElyTable', path: p, openedNow, cells: written };
 }
 
+/** 从左上角一格起，按行写入一片表格；null 的格子跳过不动。 */
+function planTable(start, rows) {
+  const anchor = parseRange(start);
+  if (anchor.c1 !== anchor.c2 || anchor.r1 !== anchor.r2) {
+    throw new BizError('INVALID_ADDRESS', `start 要是一格，如 Sheet1!A1；「${start}」是区域。`);
+  }
+  if (!Array.isArray(rows) || rows.length === 0) throw new BizError('INVALID_ARGS', 'rows 要是二维数组，如 [["分类","预算"],["餐饮",2000]]。');
+  const cells = [];
+  let skipped = 0;
+  let width = 0;
+  rows.forEach((row, ri) => {
+    if (!Array.isArray(row)) throw new BizError('INVALID_ARGS', `rows 的第 ${ri + 1} 行要是数组。`);
+    width = Math.max(width, row.length);
+    row.forEach((value, ci) => {
+      if (value === null || value === undefined) {
+        skipped += 1;
+        return;
+      }
+      const col = anchor.c1 + ci;
+      const r = anchor.r1 + ri;
+      if (col > MAX_COLUMN || r > MAX_ROW) throw new BizError('INVALID_ARGS', '要写的内容超出了表格范围（最多到 XFD 列、第 1048576 行）。');
+      cells.push({ address: cellAddress(anchor.sheet, col, r), value: cellValue(value, `第 ${ri + 1} 行第 ${ci + 1} 个值`) });
+    });
+  });
+  if (!cells.length) throw new BizError('INVALID_ARGS', 'rows 里没有要写的值（null 表示跳过）。');
+  if (cells.length > MAX_CELLS) throw new BizError('INVALID_ARGS', `一次最多写 ${MAX_CELLS} 格，这次有 ${cells.length} 格，请分几次写（每次换一个 start）。`);
+  const range = `${anchor.sheet}!${columnLetters(anchor.c1)}${anchor.r1}:${columnLetters(anchor.c1 + Math.max(width, 1) - 1)}${anchor.r1 + rows.length - 1}`;
+  return { cells, skipped, range };
+}
+
+async function writeTable(file, start, rows) {
+  const plan = planTable(start, rows);
+  const { path: p, openedNow } = await ensureOpen(file, ['excel']);
+  let done = 0;
+  for (const c of plan.cells) {
+    await setCell(p, c.address, c.value, done);
+    done += 1;
+  }
+  // 公式写完回读一次，让 AI 看到算出来的结果，发现 #NAME? 之类的错误。
+  const formulas = [];
+  for (const c of plan.cells) {
+    if (c.value.startsWith('=')) formulas.push(await getCell(p, c.address));
+  }
+  const formulaErrors = formulas.filter((f) => FORMULA_ERROR.test(String(f.text || '').trim()));
+  return {
+    kind: 'excel', app: 'ElyTable', path: p, openedNow,
+    range: plan.range, written: done, skipped: plan.skipped, formulas, formulaErrors,
+  };
+}
+
 async function saveDocument(file) {
   const p0 = requireAbsoluteFile(file);
   const kind = kindOf(p0);
-  if (!kind) throw new BizError('UNSUPPORTED_FILE_TYPE', `「${path.basename(p0)}」不是 Word、Excel 或 PPT 文件。`);
+  if (!kind) throw new BizError('UNSUPPORTED_FILE_TYPE', `「${path.basename(p0)}」不是 ${SUPPORTED_TYPES} 文件。`);
+  if (!APPS[kind].verb) throw new BizError('UNSUPPORTED_FILE_TYPE', 'PDF 在 ElyPDF 里只能查看，插件不能保存它。');
   await requireApp(kind);
   const p = await findOpenPath(kind, p0);
   if (!p) {
@@ -553,6 +771,124 @@ async function saveDocument(file) {
   }
   const out = await cli(kind, ['save', p], '保存');
   return { kind, app: APPS[kind].name, path: p, savedTo: out.trim() || p };
+}
+
+// ───────────────────────── 新建文档 ─────────────────────────
+
+function documentsDir() {
+  const home = os.homedir();
+  const docs = path.join(home, 'Documents');
+  return exists(docs) ? docs : home;
+}
+
+/** 新文件的位置：完整路径照用；只给文件名时放进用户的「文档」文件夹。 */
+function resolveNewPath(input, platform = process.platform) {
+  if (typeof input !== 'string' || !input.trim()) {
+    throw new BizError('INVALID_PATH', '请给新文件的完整路径，或只给文件名（会放进「文档」文件夹）。');
+  }
+  const s = input.trim();
+  const isAbs = platform === 'win32' ? path.win32.isAbsolute(s) : path.posix.isAbsolute(s);
+  if (isAbs) return s;
+  if (/[\\/]/.test(s)) {
+    throw new BizError('INVALID_PATH', `「${s}」不是完整路径。请给完整路径，或只给文件名（会放进「文档」文件夹）。`);
+  }
+  return path.join(documentsDir(), s);
+}
+
+const CONTENT_PARAMS = { sheets: 'excel', paragraphs: 'word', slides: 'ppt', text: 'markdown' };
+
+function given(v) {
+  return v !== undefined && v !== null;
+}
+
+/** 校验参数并生成新文件的内容，不碰磁盘。 */
+function planCreate(params, platform = process.platform) {
+  const p = params || {};
+  const target = resolveNewPath(p.path, platform);
+  const ext = path.extname(target).toLowerCase();
+  if (given(p.from) && p.from !== '') {
+    const src = requireAbsoluteFile(p.from);
+    const used = Object.keys(CONTENT_PARAMS).filter((k) => given(p[k]));
+    if (used.length) {
+      throw new BizError('INVALID_ARGS', `用 from 复制已有文件时，不能同时给 ${used.join('、')}；内容来自 from 这个文件。`);
+    }
+    const srcExt = path.extname(src).toLowerCase();
+    if (srcExt !== ext) {
+      throw new BizError('INVALID_ARGS', `新文件的扩展名要和 from 一样（${srcExt || '无扩展名'}），插件不做格式转换。`);
+    }
+    const kind = kindOf(src);
+    if (!kind) throw new BizError('UNSUPPORTED_FILE_TYPE', `「${path.basename(src)}」不是 ${SUPPORTED_TYPES} 文件。`);
+    return { target, kind, from: src };
+  }
+  const kind = CREATABLE[ext];
+  if (!kind) {
+    throw new BizError(
+      'UNSUPPORTED_FILE_TYPE',
+      '新建只支持 .docx、.xlsx、.pptx 和 .md。其他格式可以先用别的工具做好，再用 from 复制过来打开。',
+    );
+  }
+  for (const [key, owner] of Object.entries(CONTENT_PARAMS)) {
+    if (given(p[key]) && owner !== kind) {
+      throw new BizError('INVALID_ARGS', `${key} 只用于新建 ${APPS[owner].label}，这次新建的是 ${APPS[kind].label}。`);
+    }
+  }
+  try {
+    if (kind === 'excel') {
+      const r = ooxml.buildXlsx(p.sheets);
+      return { target, kind, buffer: r.buffer, info: { sheets: r.sheets } };
+    }
+    if (kind === 'word') {
+      const r = ooxml.buildDocx(p.paragraphs);
+      return { target, kind, buffer: r.buffer, info: { paragraphs: r.paragraphs } };
+    }
+    if (kind === 'ppt') {
+      const r = ooxml.buildPptx(p.slides);
+      return { target, kind, buffer: r.buffer, info: { slides: r.slides } };
+    }
+    return { target, kind, buffer: ooxml.buildMarkdown(p.text).buffer, info: {} };
+  } catch (error) {
+    if (error instanceof ooxml.InputError) throw new BizError('INVALID_ARGS', error.message);
+    throw error;
+  }
+}
+
+function writeFailure(error, target) {
+  if (error && error.code === 'EEXIST') {
+    return new BizError('FILE_EXISTS', `「${target}」已经存在，插件不会覆盖它。请换个文件名，或用 open_document 打开它。`);
+  }
+  if (error && (error.code === 'EACCES' || error.code === 'EPERM' || error.code === 'EROFS')) {
+    return new BizError('PERMISSION_DENIED', `没有权限在「${path.dirname(target)}」里新建文件，请换个位置。`);
+  }
+  if (error && (error.code === 'ENOENT' || error.code === 'EINVAL' || error.code === 'ENOTDIR' || error.code === 'ENAMETOOLONG')) {
+    return new BizError('INVALID_PATH', `不能用「${target}」这个路径新建文件：文件名里可能有系统不允许的字符，或路径不对。`);
+  }
+  return error;
+}
+
+async function createDocument(params) {
+  const p = params || {};
+  const plan = planCreate(p);
+  if (exists(plan.target)) throw writeFailure({ code: 'EEXIST' }, plan.target);
+  const openAfter = p.open !== false;
+  if (openAfter) await requireApp(plan.kind);
+  try {
+    await fsp.mkdir(path.dirname(plan.target), { recursive: true });
+    if (plan.from) await fsp.copyFile(plan.from, plan.target, fs.constants.COPYFILE_EXCL);
+    else await fsp.writeFile(plan.target, plan.buffer, { flag: 'wx' });
+  } catch (error) {
+    throw writeFailure(error, plan.target);
+  }
+  const result = { kind: plan.kind, app: APPS[plan.kind].name, path: plan.target, created: true, ...(plan.from ? { from: plan.from } : {}), ...plan.info };
+  if (!openAfter) return { ...result, opened: false };
+  try {
+    const opened = await openDocument(plan.target, { newWindow: p.newWindow === true });
+    const note = opened.newWindowIgnored ? { newWindowIgnored: opened.newWindowIgnored } : {};
+    return { ...result, path: opened.path || plan.target, opened: true, ...note };
+  } catch (error) {
+    if (!(error instanceof BizError)) throw error;
+    // 文件已经建好，只是没能打开：如实返回，让 AI 告诉用户文件在哪。
+    return { ...result, opened: false, openErrorCode: error.errorCode, openError: error.message };
+  }
 }
 
 // ───────────────────────── 运行中的应用 ─────────────────────────
@@ -591,7 +927,7 @@ async function status() {
   const det = await detect(true);
   const openDocuments = {};
   if (det.installed) {
-    for (const kind of Object.keys(APPS)) {
+    for (const kind of EDITABLE_KINDS) {
       if (!det.apps[kind].installed) continue;
       const r = await listDocs(kind).catch(() => ({ running: false, docs: [] }));
       openDocuments[kind] = r.docs;
@@ -878,13 +1214,15 @@ const METHODS = {
   'install/cancel-wait': async () => cancelWaiting(),
   'uninstall/start': async () => startUninstall(),
   'job/status': async () => jobStatus(),
-  'doc/open': async (p) => openDocument(p && p.path),
+  'doc/open': async (p) => openDocument(p && p.path, { newWindow: Boolean(p && p.newWindow === true) }),
   'doc/launch': async (p) => launchDocument(p && p.path),
+  'doc/create': async (p) => createDocument(p || {}),
   'doc/read': async (p) => readDocument(p && p.path),
   'doc/replace': async (p) => replaceText(p && p.path, p && p.replacements),
   'doc/save': async (p) => saveDocument(p && p.path),
   'cells/read': async (p) => readCells(p && p.path, p && p.addresses),
   'cells/write': async (p) => writeCells(p && p.path, p && p.cells),
+  'cells/write-table': async (p) => writeTable(p && p.path, p && p.start, p && p.rows),
 };
 
 function reply(message) {
@@ -935,4 +1273,19 @@ function start() {
 // 本地单元测试时设置 ELYOFFICE_WORKER_TEST=1 只导入函数，不接管 stdin。
 if (process.env.ELYOFFICE_WORKER_TEST !== '1') start();
 
-module.exports = { verifyManifest, countOccurrences, cmpVersion, kindOf, normalizePath, requireAddress, METHODS };
+module.exports = {
+  verifyManifest,
+  countOccurrences,
+  countAll,
+  cmpVersion,
+  kindOf,
+  normalizePath,
+  requireAddress,
+  expandAddresses,
+  planTable,
+  planCreate,
+  resolveNewPath,
+  withLoginName,
+  launchCommand,
+  METHODS,
+};

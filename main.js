@@ -539,19 +539,35 @@ channel.onmessage = async function (ev) {
 var TOOL_METHODS = {
   elyoffice_status: 'status',
   open_document: 'doc/open',
+  create_document: 'doc/create',
   read_document: 'doc/read',
   replace_text: 'doc/replace',
   read_cells: 'cells/read',
   write_cells: 'cells/write',
+  write_table: 'cells/write-table',
   save_document: 'doc/save',
 };
 
 function toolParams(tool, args) {
   var a = args || {};
   if (tool === 'elyoffice_status') return {};
+  if (tool === 'open_document') return { path: a.path, newWindow: a.newWindow === true };
+  if (tool === 'create_document') {
+    return {
+      path: a.path,
+      from: a.from,
+      sheets: a.sheets,
+      paragraphs: a.paragraphs,
+      slides: a.slides,
+      text: a.text,
+      open: a.open,
+      newWindow: a.newWindow === true,
+    };
+  }
   if (tool === 'replace_text') return { path: a.path, replacements: a.replacements };
   if (tool === 'read_cells') return { path: a.path, addresses: a.addresses };
   if (tool === 'write_cells') return { path: a.path, cells: a.cells };
+  if (tool === 'write_table') return { path: a.path, start: a.start, rows: a.rows };
   return { path: a.path };
 }
 
@@ -571,6 +587,7 @@ async function handleToolCall(msg) {
     await sendResult(msg.callId, { ok: false, errorCode: 'UNKNOWN_TOOL', message: '没有这个工具：' + msg.tool });
     return;
   }
+  // 120 秒是插件后台单次请求的上限：等 ElyOffice 打开最多 60 秒，500 格写入约 20 秒。
   var r = await nodeCall(method, toolParams(msg.tool, msg.args), { callId: msg.callId, timeoutMs: 120000 });
   if (!r.ok) {
     if (r.errorCode === 'ELYOFFICE_NOT_INSTALLED') await refreshDetect(true);
@@ -587,7 +604,8 @@ async function handleToolCall(msg) {
     }
     if (!r.installed) r.hint = '还没有安装 ElyOffice：请用户打开「插件 → ElyOffice」设置页一键安装。';
   }
-  var modified = (msg.tool === 'replace_text' && r.totalReplaced > 0) || msg.tool === 'write_cells';
+  var modified = (msg.tool === 'replace_text' && r.totalReplaced > 0) || msg.tool === 'write_cells' ||
+    (msg.tool === 'write_table' && r.written > 0);
   if (modified) {
     var kv = await readKv();
     if (kv[KV_AUTOSAVE] === true) {

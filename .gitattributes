@@ -2,3 +2,7 @@
 # 签名测试夹具必须逐字节保持原样
 test/fixtures/** -text
 *.png binary
+# ElyOffice 空白模板按原字节保存
+*.docx binary
+*.xlsx binary
+*.pptx binary
