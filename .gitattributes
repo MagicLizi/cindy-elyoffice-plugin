@@ -1,0 +1,4 @@
+* text=auto eol=lf
+# 签名测试夹具必须逐字节保持原样
+test/fixtures/** -text
+*.png binary

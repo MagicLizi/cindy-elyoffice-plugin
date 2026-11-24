@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 3,
+  "minCindyVersion": "0.1.144",
+  "id": "elyoffice",
+  "name": "ElyOffice",
+  "description": "用 ElyOffice 打开和编辑 Word、Excel、PPT，并让 AI 直接在 ElyOffice 的窗口里帮你改，改动看得见、能撤销。第一次使用时可在插件设置里一键安装 ElyOffice（免费开源）。",
+  "whenToUse": "用户提到 ElyOffice，或要在 ElyOffice 里打开、查看、修改 Word、Excel、PPT 文件（替换文字、填写表格、改公式、改幻灯片文字、保存），或要改的文档正开在 ElyOffice 里时找我；也负责安装、更新 ElyOffice",
+  "icon": "assets/icon.png",
+  "readme": {
+    "en": "README.md",
+    "zh-CN": "README.zh-CN.md"
+  },
+  "locales": {
+    "en": "locales/en.json",
+    "zh-CN": "locales/zh-CN.json"
+  },
+  "version": "0.1.0",
+  "entry": "main.js",
+  "launch": "on-demand",
+  "command": "ElyOffice",
+  "settingsHtml": "settings.html",
+  "githubRelease": "MagicLizi/cindy-elyoffice-plugin",
+  "notify": true,
+  "setup": {
+    "requires": [
+      {
+        "anyOf": [
+          {
+            "kv": "elyoffice_ready",
+            "label": "安装 ElyOffice"
+          }
+        ]
+      }
+    ]
+  },
+  "network": {
+    "hosts": [
+      "github.com",
+      "api.github.com",
+      "release-assets.githubusercontent.com",
+      "objects.githubusercontent.com"
+    ]
+  },
+  "node": {
+    "entry": "node/worker.cjs",
+    "protocol": "json-rpc-stdio",
+    "lifecycle": "on-demand",
+    "idleTimeoutSeconds": 900
+  },
+  "manual": {
+    "items": [
+      {
+        "dir": "manual/guide",
+        "name": "guide",
+        "description": "用 ElyOffice 读改 Word、Excel、PPT 的完整流程：何时使用、保存规则、做不到的事与替代办法、常见错误处理"
+      }
+    ]
+  },
+  "tools": [
+    {
+      "name": "elyoffice_status",
+      "description": "查看这台电脑上 ElyOffice 是否已安装、版本号，以及 ElyDoc（Word）、ElyTable（Excel）、ElyShow（PPT）里当前打开了哪些文件。返回 installed、version、openDocuments（word / excel / ppt 三组完整路径）。读改文档前不确定文件是否已开着时先调用；完整流程见 ghost_manual({ ghost_id: \"elyoffice\", path: \"guide\" })。",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "open_document",
+      "description": "用 ElyOffice 打开一个 Word、Excel 或 PPT 文件，窗口会出现在用户屏幕最前面；文件已开着时只把窗口提到前面。返回 ElyOffice 使用的文件路径和 openedNow（这次是否新打开）。仅在用户要求打开，或接下来要用本插件读改这个文件时调用。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件在这台电脑上的绝对路径"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "read_document",
+      "description": "读取 Word 正文或 PPT 每页的文字（Excel 用 read_cells）。文件没开着时会先在 ElyOffice 里打开它（窗口会弹出）。Word 返回 text（一段一行），PPT 返回 slides（按页）。读不到脚注、批注、文本框、已删除的修订和 PPT 备注；内容超过 20 万字时 truncated 为 true。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Word 或 PPT 文件在这台电脑上的绝对路径"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "replace_text",
+      "description": "在 ElyOffice 里打开的 Word 或 PPT 中替换文字，改动立即显示在用户的窗口里，每次替换都能在 ElyOffice 里按 Ctrl+Z 撤销。逐字匹配、区分大小写、不能跨段，会替换全部匹配处；文件没开着时会先打开。只能改文字内容，不能改格式、增删段落或幻灯片。返回每项的 replaced（替换了几处，0 表示没找到）和 saved（是否已保存，由用户的「AI 改完自动保存」设置决定；saved 为 false 时要提醒用户检查后保存）。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Word 或 PPT 文件在这台电脑上的绝对路径"
+          },
+          "replacements": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "按顺序执行的替换，一次最多 50 项",
+            "items": {
+              "type": "object",
+              "properties": {
+                "find": {
+                  "type": "string",
+                  "description": "要找的原文：逐字照抄文档里的文字，区分大小写，不含换行"
+                },
+                "replace": {
+                  "type": "string",
+                  "description": "替换成的文字，不含换行；传空字符串表示删掉这段文字"
+                }
+              },
+              "required": [
+                "find",
+                "replace"
+              ]
+            }
+          }
+        },
+        "required": [
+          "path",
+          "replacements"
+        ]
+      }
+    },
+    {
+      "name": "read_cells",
+      "description": "读取 Excel 表格中的单元格，返回每格的地址、显示的文字（text）和输入内容（input，公式以 = 开头）。文件没开着时会先在 ElyTable 里打开（窗口会弹出）。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Excel 文件在这台电脑上的绝对路径"
+          },
+          "addresses": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "description": "要读的单元格，一次最多 200 个",
+            "items": {
+              "type": "string",
+              "description": "写明工作表名的地址，如 Sheet1!B2；工作表名有空格时写成 'My Sheet'!B2"
+            }
+          }
+        },
+        "required": [
+          "path",
+          "addresses"
+        ]
+      }
+    },
+    {
+      "name": "write_cells",
+      "description": "向 ElyTable 里打开的 Excel 表格写入单元格，改动立即显示并重新计算，每格写入都能在 ElyTable 里按 Ctrl+Z 撤销；文件没开着时会先打开。返回写入后每格的显示结果，以及 saved（是否已保存，由用户的「AI 改完自动保存」设置决定；saved 为 false 时要提醒用户检查后保存）。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Excel 文件在这台电脑上的绝对路径"
+          },
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "description": "按顺序写入的单元格，一次最多 200 个",
+            "items": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "string",
+                  "description": "写明工作表名的地址，如 Sheet1!B2"
+                },
+                "value": {
+                  "type": [
+                    "string",
+                    "number"
+                  ],
+                  "description": "要写入的内容：文字、数字，或以 = 开头的公式（如 =B2-B3）"
+                }
+              },
+              "required": [
+                "address",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "path",
+          "cells"
+        ]
+      }
+    },
+    {
+      "name": "save_document",
+      "description": "保存 ElyOffice 里打开的文件，保持原格式。只在用户明确要求保存时调用。文件在打开后被别的程序改过时，ElyOffice 不会覆盖，返回 DISK_CHANGED。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "要保存的文件在这台电脑上的绝对路径"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  ]
+}

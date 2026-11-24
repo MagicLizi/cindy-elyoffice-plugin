@@ -1,0 +1,59 @@
+{
+  "name": "ElyOffice",
+  "description": "Open and edit Word, Excel and PowerPoint files with ElyOffice, and let AI edit them right in the ElyOffice window, where every change is visible and can be undone. ElyOffice (free and open source) can be installed with one click from the plugin settings.",
+  "whenToUse": "Use when the user mentions ElyOffice, wants to open, read or edit a Word, Excel or PowerPoint file in ElyOffice (replace text, fill in cells, change formulas, edit slide text, save), or the document is already open in ElyOffice; also installs and updates ElyOffice",
+  "tools": {
+    "elyoffice_status": {
+      "description": "Check whether ElyOffice is installed on this computer, its version, and which files are open in ElyDoc (Word), ElyTable (Excel) and ElyShow (PowerPoint). Returns installed, version and openDocuments (full paths grouped as word / excel / ppt). Call it first when you are not sure whether a file is already open; the full workflow is in ghost_manual({ ghost_id: \"elyoffice\", path: \"guide\" })."
+    },
+    "open_document": {
+      "description": "Open a Word, Excel or PowerPoint file in ElyOffice. The window comes to the front of the user's screen; if the file is already open, only its window is brought forward. Returns the path ElyOffice uses for the file and openedNow (whether it was opened by this call). Call it only when the user asks to open the file, or right before reading or editing it with this plugin.",
+      "parameters": {
+        "/properties/path": { "description": "Absolute path of the file on this computer" }
+      }
+    },
+    "read_document": {
+      "description": "Read the body text of a Word document or the text of each PowerPoint slide (use read_cells for Excel). If the file is not open yet, it is opened in ElyOffice first and its window appears. Word returns text (one paragraph per line); PowerPoint returns slides (one entry per slide). Footnotes, comments, text boxes, deleted tracked changes and speaker notes are not included; truncated is true when the text exceeds 200,000 characters.",
+      "parameters": {
+        "/properties/path": { "description": "Absolute path of the Word or PowerPoint file on this computer" }
+      }
+    },
+    "replace_text": {
+      "description": "Replace text in a Word or PowerPoint file open in ElyOffice. Changes appear in the user's window immediately, and each replacement can be undone with Ctrl+Z in ElyOffice. Matching is exact, case-sensitive and within one paragraph, and every match is replaced; the file is opened first if needed. It changes text only, not formatting, paragraphs or slides. Returns replaced for each item (0 means not found) and saved (whether the file was saved, which follows the user's \"Save automatically after AI edits\" setting; when saved is false, remind the user to check and save).",
+      "parameters": {
+        "/properties/path": { "description": "Absolute path of the Word or PowerPoint file on this computer" },
+        "/properties/replacements": { "description": "Replacements applied in order, at most 50 at a time" },
+        "/properties/replacements/items/properties/find": { "description": "Original text, copied exactly from the document: case-sensitive, no line breaks" },
+        "/properties/replacements/items/properties/replace": { "description": "Replacement text without line breaks; an empty string deletes the original text" }
+      }
+    },
+    "read_cells": {
+      "description": "Read cells from an Excel workbook. Returns each cell's address, displayed text (text) and input (input; formulas start with =). If the file is not open yet, it is opened in ElyTable first and its window appears.",
+      "parameters": {
+        "/properties/path": { "description": "Absolute path of the Excel file on this computer" },
+        "/properties/addresses": { "description": "Cells to read, at most 200 at a time" },
+        "/properties/addresses/items": { "description": "Address including the sheet name, such as Sheet1!B2; quote sheet names with spaces, such as 'My Sheet'!B2" }
+      }
+    },
+    "write_cells": {
+      "description": "Write cells in an Excel workbook open in ElyTable. Changes appear and recalculate immediately, and each write can be undone with Ctrl+Z in ElyTable; the file is opened first if needed. Returns each cell's displayed result after writing, and saved (whether the file was saved, which follows the user's \"Save automatically after AI edits\" setting; when saved is false, remind the user to check and save).",
+      "parameters": {
+        "/properties/path": { "description": "Absolute path of the Excel file on this computer" },
+        "/properties/cells": { "description": "Cells written in order, at most 200 at a time" },
+        "/properties/cells/items/properties/address": { "description": "Address including the sheet name, such as Sheet1!B2" },
+        "/properties/cells/items/properties/value": { "description": "Content to write: text, a number, or a formula starting with = (such as =B2-B3)" }
+      }
+    },
+    "save_document": {
+      "description": "Save a file open in ElyOffice in its original format. Call it only when the user explicitly asks to save. If another program changed the file after it was opened, ElyOffice does not overwrite it and DISK_CHANGED is returned.",
+      "parameters": {
+        "/properties/path": { "description": "Absolute path of the file to save on this computer" }
+      }
+    }
+  },
+  "setup": {
+    "kv": {
+      "elyoffice_ready": { "label": "Install ElyOffice" }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "ElyOffice",
+  "setup": {
+    "kv": {
+      "elyoffice_ready": { "label": "安装 ElyOffice" }
+    }
+  }
+}
