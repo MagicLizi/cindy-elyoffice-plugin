@@ -200,22 +200,36 @@ async function hostText(url, accept) {
   return String(r.body || '');
 }
 
-async function assetSize(v) {
-  var body = await hostText('https://api.github.com/repos/' + REPO + '/releases/tags/v' + encodeURIComponent(v.version), 'application/vnd.github+json');
-  var data;
-  try {
-    data = JSON.parse(body);
-  } catch (e) {
-    throw bizError('NETWORK_FAILED', 'GitHub 返回的发布信息看不懂，请稍后再试。');
+var RELEASE_DOWNLOAD_PREFIX = 'https://github.com/' + REPO + '/releases/download/';
+
+function assetDigest(asset) {
+  return asset && typeof asset.digest === 'string' && /^sha256:[a-f0-9]{64}$/.test(asset.digest)
+    ? asset.digest.slice(7)
+    : null;
+}
+
+function findAsset(release, name) {
+  return (release.assets || []).find(function (a) { return a && a.name === name; }) || null;
+}
+
+// 版本清单和签名在 GitHub 上标成二进制类型，cindy.fetch 的文本模式取不回；
+// 改用 Cindy 的下载能力，按 GitHub 给的 SHA-256 与大小核对后交给后台读取。
+async function downloadSmallAsset(asset, kind) {
+  var sha = assetDigest(asset);
+  if (!sha || !Number.isSafeInteger(asset.size) || asset.size <= 0 || asset.size > 1024 * 1024 ||
+      typeof asset.browser_download_url !== 'string' || asset.browser_download_url.indexOf(RELEASE_DOWNLOAD_PREFIX) !== 0) {
+    throw bizError('MANIFEST_INVALID', 'ElyOffice 发布页上的版本清单信息不完整，已停止。');
   }
-  var asset = (data.assets || []).find(function (a) { return a && a.name === v.assetName; });
-  if (!asset || !Number.isSafeInteger(asset.size) || asset.size <= 0) {
-    throw bizError('MANIFEST_INVALID', '没有在 ElyOffice 发布页找到安装包的大小信息。');
+  var d = await cindy.downloads.start({
+    id: ('elyoffice-' + kind + '-' + sha.slice(0, 16)),
+    url: asset.browser_download_url,
+    sha256: sha,
+    bytes: asset.size,
+  });
+  if (!d || !d.ok) {
+    throw bizError('NETWORK_FAILED', '连不上 GitHub：' + ((d && d.message) || '下载版本清单失败') + '。请检查网络后再试。');
   }
-  if (typeof asset.digest === 'string' && asset.digest.indexOf('sha256:') === 0 && asset.digest.slice(7) !== v.sha256) {
-    throw bizError('CHECKSUM_MISMATCH', 'GitHub 上的安装包和 ElyOffice 官方签名清单对不上，已停止。');
-  }
-  return asset.size;
+  return d.token;
 }
 
 async function checkLatest(force) {
@@ -227,19 +241,44 @@ async function checkLatest(force) {
     return { ok: false, errorCode: 'UNSUPPORTED_PLATFORM', message: latestError };
   }
   try {
+    var body = await hostText('https://api.github.com/repos/' + REPO + '/releases/latest', 'application/vnd.github+json');
+    var release;
+    try {
+      release = JSON.parse(body);
+    } catch (e) {
+      throw bizError('NETWORK_FAILED', 'GitHub 返回的发布信息看不懂，请稍后再试。');
+    }
     var name = 'ely-office-' + det.platformKey + '.json';
-    var base = 'https://github.com/' + REPO + '/releases/latest/download/';
-    var texts = await Promise.all([hostText(base + name), hostText(base + name + '.sig')]);
-    var v = await nodeCall('release/verify', { name: name, manifest: texts[0], signature: texts[1], platformKey: det.platformKey });
+    var manifestAsset = findAsset(release, name);
+    var signatureAsset = findAsset(release, name + '.sig');
+    if (!manifestAsset || !signatureAsset) {
+      throw bizError('UNSUPPORTED_PLATFORM', '最新版本没有提供这台电脑可用的安装包。');
+    }
+    var tokens = await Promise.all([
+      downloadSmallAsset(manifestAsset, 'manifest'),
+      downloadSmallAsset(signatureAsset, 'signature'),
+    ]);
+    var v = await nodeCall(
+      'release/verify-files',
+      { name: name, platformKey: det.platformKey },
+      { downloadTokens: { manifest: tokens[0], signature: tokens[1] } },
+    );
     if (!v.ok) throw bizError(v.errorCode, v.message);
-    var bytes = await assetSize(v);
+    var installer = findAsset(release, v.assetName);
+    if (!installer || !Number.isSafeInteger(installer.size) || installer.size <= 0) {
+      throw bizError('MANIFEST_INVALID', '没有在 ElyOffice 发布页找到安装包的大小信息。');
+    }
+    var installerDigest = assetDigest(installer);
+    if (installerDigest && installerDigest !== v.sha256) {
+      throw bizError('CHECKSUM_MISMATCH', 'GitHub 上的安装包和 ElyOffice 官方签名清单对不上，已停止。');
+    }
     var value = {
       ok: true,
       version: v.version,
       url: v.url,
       sha256: v.sha256,
       assetName: v.assetName,
-      bytes: bytes,
+      bytes: installer.size,
       notesUrl: 'https://github.com/' + REPO + '/releases/tag/v' + v.version,
     };
     latest = { at: Date.now(), value: value };
@@ -539,8 +578,13 @@ async function handleToolCall(msg) {
     return;
   }
   if (msg.tool === 'elyoffice_status') {
-    var lv = latest && latest.value && latest.value.ok ? latest.value : null;
-    if (lv && r.version && cmpVersion(lv.version, r.version) > 0) r.updateAvailable = lv.version;
+    var lv = await checkLatest(false);
+    if (lv.ok) {
+      r.latestVersion = lv.version;
+      if (r.version && cmpVersion(lv.version, r.version) > 0) r.updateAvailable = lv.version;
+    } else {
+      r.latestVersionError = lv.message;
+    }
     if (!r.installed) r.hint = '还没有安装 ElyOffice：请用户打开「插件 → ElyOffice」设置页一键安装。';
   }
   var modified = (msg.tool === 'replace_text' && r.totalReplaced > 0) || msg.tool === 'write_cells';
