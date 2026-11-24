@@ -374,6 +374,17 @@ async function openDocument(file, { waitMs = 60000 } = {}) {
   );
 }
 
+// Cindy 的「用默认应用打开」交给插件时用:只负责拉起 ElyOffice,不等文件出现在已打开列表里
+// (Cindy 只等约 15 秒)。没装或类型不对时抛错,由 Cindy 改用系统默认应用。
+async function launchDocument(file) {
+  const p = requireAbsoluteFile(file);
+  const kind = kindOf(p);
+  if (!kind) throw new BizError('UNSUPPORTED_FILE_TYPE', `「${path.basename(p)}」不是 Word、Excel 或 PPT 文件。`);
+  const app = await requireApp(kind);
+  launchApp(kind, app, p);
+  return { kind, app: APPS[kind].name, launched: true };
+}
+
 async function ensureOpen(file, expectKinds) {
   const p = requireAbsoluteFile(file);
   const kind = kindOf(p);
@@ -856,6 +867,7 @@ const METHODS = {
   'uninstall/start': async () => startUninstall(),
   'job/status': async () => jobStatus(),
   'doc/open': async (p) => openDocument(p && p.path),
+  'doc/launch': async (p) => launchDocument(p && p.path),
   'doc/read': async (p) => readDocument(p && p.path),
   'doc/replace': async (p) => replaceText(p && p.path, p && p.replacements),
   'doc/save': async (p) => saveDocument(p && p.path),

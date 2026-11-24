@@ -14,7 +14,8 @@
     "en": "locales/en.json",
     "zh-CN": "locales/zh-CN.json"
   },
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "releaseNotes": "Office files you open from Cindy with your default app can open in ElyOffice instead (needs a Cindy version that supports plugin file openers; turn it off in the plugin details). Covers Word, Excel and PowerPoint formats, including .doc, .xls, .ppt and .csv. 在 Cindy 里用默认应用打开 Word、Excel、PPT 文件时，可以改用 ElyOffice 打开（需要支持插件打开文件的新版 Cindy；可在插件详情里关掉）。",
   "entry": "main.js",
   "launch": "on-demand",
   "command": "ElyOffice",
@@ -46,6 +47,36 @@
     "protocol": "json-rpc-stdio",
     "lifecycle": "on-demand",
     "idleTimeoutSeconds": 900
+  },
+  "fileOpener": {
+    "extensions": [
+      ".docx",
+      ".doc",
+      ".docm",
+      ".dotx",
+      ".dotm",
+      ".dot",
+      ".odt",
+      ".fodt",
+      ".rtf",
+      ".xlsx",
+      ".xls",
+      ".xlsm",
+      ".xltx",
+      ".xltm",
+      ".ods",
+      ".fods",
+      ".csv",
+      ".pptx",
+      ".ppt",
+      ".pptm",
+      ".potx",
+      ".potm",
+      ".ppsx",
+      ".pps",
+      ".odp",
+      ".fodp"
+    ]
   },
   "manual": {
     "items": [

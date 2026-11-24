@@ -559,6 +559,22 @@ async function handleToolCall(msg) {
   await sendResult(msg.callId, r);
 }
 
+// 用户在 Cindy 里用默认应用打开 Office 文件时(需支持 fileOpener 的 Cindy),交给 ElyOffice。
+// 拉起成功回 ok:true;没装 ElyOffice 等情况回 ok:false,Cindy 改用系统默认应用。
+async function handleOpenFile(msg) {
+  var ok = false;
+  try {
+    var r = await nodeCall('doc/launch', { path: msg.data && msg.data.path }, { timeoutMs: 10000 });
+    ok = Boolean(r.ok);
+    if (!r.ok && r.errorCode === 'ELYOFFICE_NOT_INSTALLED') await refreshDetect(true);
+  } catch (e) {
+    ok = false;
+  }
+  try {
+    await cindy.send({ type: 'file-open-result', requestId: msg.requestId, ok: ok });
+  } catch (e) {}
+}
+
 function onDownloadProgress(d) {
   if (!d || !activeDownloadId || d.id !== activeDownloadId) return;
   if (job.phase !== 'downloading' && job.phase !== 'verifying') return;
@@ -587,6 +603,10 @@ cindy.onHostMessage(function (msg) {
   }
   if (msg.type === 'event' && msg.name === 'download-progress') {
     onDownloadProgress(msg.data);
+    return;
+  }
+  if (msg.type === 'event' && msg.name === 'open-file') {
+    handleOpenFile(msg);
     return;
   }
   if (msg.type === 'tool-call') {
