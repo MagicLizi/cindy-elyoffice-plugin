@@ -6,54 +6,48 @@
   <link rel="stylesheet" href="/settings.css">
 </head>
 <body>
-  <main class="page">
-    <section class="status" aria-live="polite">
-      <div class="status-head">
-        <span class="status-icon" id="status-icon" data-kind="busy" aria-hidden="true"></span>
-        <div class="status-text">
-          <h2 class="title" id="title"></h2>
-          <p class="desc" id="desc" hidden></p>
+  <main class="rows">
+    <!-- ElyOffice 应用本身：状态、版本、安装 / 更新 -->
+    <section class="row" id="app-row" aria-live="polite">
+      <div class="row-main">
+        <h3 class="row-title" data-i18n="appTitle"></h3>
+        <p class="row-meta">
+          <span class="status"><span class="dot" id="app-dot"></span><span id="app-status"></span></span>
+          <span id="app-version" hidden></span>
+          <span id="app-latest" hidden></span>
+          <a id="app-link" href="https://github.com/ELY-Open-Source/ElyOffice" data-i18n="homeLink"></a>
+        </p>
+        <p class="row-desc" id="app-desc" hidden></p>
+      </div>
+      <div class="row-actions" id="app-actions"></div>
+      <div class="row-extra" id="app-extra" hidden>
+        <div class="meter" id="meter" hidden><div class="meter-fill" id="meter-fill"></div></div>
+        <p class="row-note" id="meter-text" hidden></p>
+        <div class="notice" id="notice" hidden>
+          <p id="notice-text"></p>
+          <ul id="notice-list" hidden></ul>
         </div>
+        <p class="row-note" id="app-note" hidden></p>
       </div>
-
-      <div class="progress" id="progress" hidden>
-        <div class="track"><div class="fill" id="fill"></div></div>
-        <p class="small muted" id="progress-text"></p>
-      </div>
-
-      <ul class="running" id="running" hidden></ul>
-
-      <p class="small muted" id="meta" hidden></p>
-
-      <div class="actions" id="actions" hidden></div>
-
-      <div class="confirm" id="confirm" hidden>
-        <p class="small" data-i18n="confirmText"></p>
-        <div class="actions">
-          <button type="button" class="btn danger-fill" id="confirm-yes" data-i18n="confirmYes"></button>
-          <button type="button" class="btn" id="confirm-no" data-i18n="cancel"></button>
-        </div>
-      </div>
-
-      <p class="small muted note" id="note" hidden></p>
     </section>
 
-    <hr class="divider">
-
-    <section class="prefs">
-      <label class="switch-row" for="autosave">
-        <span class="switch-text">
-          <span class="label" data-i18n="autosaveLabel"></span>
-          <span class="small muted" id="autosave-hint"></span>
-        </span>
-        <input type="checkbox" id="autosave" role="switch" disabled>
+    <!-- AI 改完自动保存 -->
+    <section class="row" id="autosave-row" hidden>
+      <label class="row-main" for="autosave">
+        <span class="row-title" data-i18n="autosaveTitle"></span>
+        <span class="row-desc" id="autosave-desc"></span>
       </label>
+      <input type="checkbox" id="autosave" class="switch" role="switch">
     </section>
 
-    <footer class="links small">
-      <a href="https://github.com/ELY-Open-Source/ElyOffice" data-i18n="homeLink"></a>
-      <button type="button" class="link danger" id="uninstall" data-i18n="uninstallLink" hidden></button>
-    </footer>
+    <!-- 卸载 -->
+    <section class="row" id="uninstall-row" hidden>
+      <div class="row-main">
+        <h3 class="row-title" data-i18n="uninstallTitle"></h3>
+        <p class="row-desc" id="uninstall-desc"></p>
+      </div>
+      <div class="row-actions" id="uninstall-actions"></div>
+    </section>
   </main>
   <script src="/settings.js"></script>
 </body>

@@ -1,126 +1,214 @@
-/* 颜色全部取宿主主题变量（自带浅色回退值），深浅模式随 Cindy 实时切换。 */
-.page {
-  padding: 4px 2px 6px;
+/*
+ * 与 Cindy 插件设置卡里的原生行（「插件更新」）同一套规格：
+ * 行上方 1px 分隔线、行间 12px；标题 13px/500，说明 12px 次要色；28px 胶囊按钮。
+ * 颜色全部取宿主注入的主题变量（带浅色回退），深浅模式随 Cindy 实时切换。
+ * 开关开启色用 Cindy 定稿的 #417CDD（插件页拿不到 switch token）。
+ */
+
+.rows {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-}
-
-.status {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.status-head {
-  display: flex;
-  align-items: flex-start;
   gap: 12px;
+  margin: 0;
+  padding: 0 0 2px;
 }
 
-.status-icon {
-  flex: none;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: inline-flex;
+.row {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1;
-  background: var(--surface-chip, #efefec);
-  color: var(--text-secondary, #5f5f5a);
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-default, #e4e4e0);
 }
 
-.status-icon[data-kind="ready"] {
-  color: var(--status-success, #2f9e5b);
-}
-
-.status-icon[data-kind="ready"]::before { content: "✓"; }
-.status-icon[data-kind="install"]::before { content: "↓"; }
-.status-icon[data-kind="update"]::before { content: "↑"; }
-.status-icon[data-kind="info"]::before { content: "i"; }
-
-.status-icon[data-kind="error"] {
-  background: var(--error-bg, #fdecea);
-  color: var(--error-fg, #c0392b);
-}
-
-.status-icon[data-kind="error"]::before { content: "!"; }
-
-.status-icon[data-kind="busy"]::before {
-  content: "";
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid var(--border-default, #d9d9d4);
-  border-top-color: var(--text-primary, #1a1a1a);
-  animation: spin var(--motion-spinner-cycle, 0.9s) linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.status-text {
+.row-main {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
-  flex: 1;
 }
 
-.title {
-  margin: 4px 0 2px;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.4;
+label.row-main {
+  cursor: pointer;
+}
+
+.row-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
   color: var(--text-primary, #1a1a1a);
 }
 
-.desc {
+.row-meta,
+.row-desc,
+.row-note {
   margin: 0;
-  color: var(--text-secondary, #5f5f5a);
-  line-height: 1.55;
-}
-
-.small {
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 18px;
 }
 
-.muted {
+.row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  color: var(--text-secondary, #5f5f5a);
+}
+
+.row-desc {
+  color: var(--text-secondary, #5f5f5a);
+}
+
+.row-note {
   color: var(--text-tertiary, #8a8a84);
 }
 
-p {
-  margin: 0;
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.progress {
+.row-extra {
   display: flex;
+  flex: 1 0 100%;
   flex-direction: column;
   gap: 6px;
 }
 
-.track {
-  position: relative;
-  height: 6px;
-  border-radius: 3px;
-  overflow: hidden;
-  background: var(--slider-track, rgba(127, 127, 127, 0.22));
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary, #1a1a1a);
 }
 
-.fill {
+.dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary, #8a8a84);
+}
+
+.dot[data-tone="ok"] {
+  background: var(--status-success, #2f9e5b);
+}
+
+.dot[data-tone="busy"] {
+  background: var(--status-bar-accent, #ff6600);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.dot[data-tone="error"] {
+  background: var(--error-fg, #c0392b);
+}
+
+@keyframes pulse {
+  50% { opacity: 0.35; }
+}
+
+a {
+  color: var(--text-secondary, #5f5f5a);
+  text-decoration: none;
+}
+
+a::after {
+  content: " ↗";
+}
+
+a:hover {
+  color: var(--text-primary, #1a1a1a);
+}
+
+/* 按钮：28px 胶囊，13px/500，与 Cindy Button size="sm" 一致 */
+.btn {
+  appearance: none;
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 16px;
+  border-radius: 9999px;
+  border: 1px solid var(--border-default, #e4e4e0);
+  background: var(--surface-elevated, #ffffff);
+  color: var(--text-primary, #1a1a1a);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 26px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--motion-fast, 160ms) var(--motion-ease-out, ease-out);
+}
+
+.btn:hover:enabled {
+  background: color-mix(in srgb, var(--text-primary, #1a1a1a) 7%, var(--surface-elevated, #ffffff));
+}
+
+.btn.primary {
+  border-color: var(--accent-cta-bg, #1a1a1a);
+  background: var(--accent-cta-bg, #1a1a1a);
+  color: var(--accent-pure-cta-fg, #ffffff);
+}
+
+.btn.primary:hover:enabled {
+  background: color-mix(in srgb, var(--accent-cta-bg, #1a1a1a) 86%, var(--surface, #ffffff));
+}
+
+.btn.danger {
+  color: var(--error-fg, #c0392b);
+}
+
+.btn.danger:hover:enabled {
+  background: color-mix(in srgb, var(--error-fg, #c0392b) 10%, var(--surface-elevated, #ffffff));
+}
+
+.btn.danger-solid {
+  border-color: var(--error-fg, #c0392b);
+  background: var(--error-fg, #c0392b);
+  color: #ffffff;
+}
+
+.btn.danger-solid:hover:enabled {
+  background: color-mix(in srgb, var(--error-fg, #c0392b) 88%, #000000);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.btn:focus-visible,
+.switch:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--focus-ring, #4c8dff);
+  outline-offset: 2px;
+}
+
+/* 进度条：4px 细条，不确定进度时来回滑动 */
+.meter {
+  position: relative;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text-tertiary, #8a8a84) 22%, transparent);
+}
+
+.meter-fill {
   height: 100%;
   width: 0;
-  border-radius: 3px;
-  background: var(--slider-fill, var(--accent-cta-bg, #1a1a1a));
+  border-radius: 2px;
+  background: var(--text-primary, #1a1a1a);
   transition: width var(--motion-fast, 160ms) var(--motion-ease-out, ease-out);
 }
 
-.progress.indeterminate .fill {
-  width: 35%;
+.meter[data-mode="indeterminate"] .meter-fill {
   position: absolute;
-  left: -35%;
+  left: -30%;
+  width: 30%;
   animation: slide 1.4s ease-in-out infinite;
 }
 
@@ -128,131 +216,42 @@ p {
   to { left: 100%; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .progress.indeterminate .fill { animation: none; left: 0; width: 100%; opacity: 0.5; }
-  .status-icon[data-kind="busy"]::before { animation: none; }
-}
-
-.running {
-  margin: 0;
+/* 错误说明 */
+.notice {
   padding: 8px 12px;
-  list-style: none;
-  border-radius: 8px;
-  background: var(--surface-chip, #efefec);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
-  color: var(--text-secondary, #5f5f5a);
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.btn {
-  appearance: none;
-  min-height: 32px;
-  padding: 6px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--border-default, #e4e4e0);
-  background: transparent;
-  color: var(--text-primary, #1a1a1a);
-  font: inherit;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.btn:hover {
-  background: var(--surface-chip, #efefec);
-}
-
-.btn.primary {
-  border-color: transparent;
-  background: var(--accent-cta-bg, #1a1a1a);
-  color: var(--accent-pure-cta-fg, #ffffff);
-}
-
-.btn.primary:hover {
-  filter: brightness(1.08);
-}
-
-.btn.danger-fill {
-  border-color: transparent;
-  background: var(--error-fg, #c0392b);
-  color: #ffffff;
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.btn:focus-visible,
-.link:focus-visible,
-a:focus-visible,
-input:focus-visible {
-  outline: 2px solid var(--focus-ring, #4c8dff);
-  outline-offset: 2px;
-}
-
-.confirm {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid var(--error-border, #f3c5bf);
   background: var(--error-bg, #fdecea);
-  color: var(--text-primary, #1a1a1a);
+  color: var(--error-fg, #c0392b);
+  font-size: 12px;
+  line-height: 18px;
 }
 
-.note {
-  padding-top: 2px;
-}
-
-.divider {
+.notice p {
   margin: 0;
-  border: 0;
-  border-top: 1px solid var(--border-default, #e4e4e0);
 }
 
-.switch-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  cursor: pointer;
+.notice ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  color: var(--text-secondary, #5f5f5a);
 }
 
-.switch-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.label {
-  font-weight: 500;
-  color: var(--text-primary, #1a1a1a);
-}
-
-input[type="checkbox"][role="switch"] {
+/* 开关：36×20 轨道、16px 滑块，与 Cindy 共享 Switch 同尺寸 */
+.switch {
   appearance: none;
   flex: none;
   position: relative;
   width: 36px;
   height: 20px;
-  margin: 2px 0 0;
+  margin: 0;
   border-radius: 10px;
-  background: var(--slider-track, rgba(127, 127, 127, 0.3));
+  background: color-mix(in srgb, var(--text-tertiary, #8a8a84) 45%, transparent);
   cursor: pointer;
-  transition: background var(--motion-fast, 160ms) var(--motion-ease-out, ease-out);
+  transition: background-color var(--motion-fast, 160ms) var(--motion-ease-out, ease-out);
 }
 
-input[type="checkbox"][role="switch"]::after {
+.switch::after {
   content: "";
   position: absolute;
   top: 2px;
@@ -260,54 +259,33 @@ input[type="checkbox"][role="switch"]::after {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: var(--slider-thumb, #ffffff);
-  box-shadow: var(--slider-thumb-shadow, 0 1px 2px rgba(0, 0, 0, 0.25));
+  background: #fcfcfc;
   transition: transform var(--motion-fast, 160ms) var(--motion-ease-out, ease-out);
 }
 
-input[type="checkbox"][role="switch"]:checked {
-  background: var(--slider-fill, var(--accent-cta-bg, #1a1a1a));
+.switch:checked {
+  background: #417cdd;
 }
 
-input[type="checkbox"][role="switch"]:checked::after {
+.switch:checked::after {
   transform: translateX(16px);
 }
 
-input[type="checkbox"][role="switch"]:disabled {
-  opacity: 0.5;
+.switch:disabled {
+  opacity: 0.3;
   cursor: default;
 }
 
-.links {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-}
-
-.links a,
-.link {
-  color: var(--text-secondary, #5f5f5a);
-  text-decoration: none;
-}
-
-.links a:hover,
-.link:hover {
-  text-decoration: underline;
-}
-
-.link {
-  appearance: none;
-  border: 0;
-  padding: 0;
-  background: none;
-  font: inherit;
-  cursor: pointer;
-}
-
-.link.danger {
-  color: var(--error-fg, #c0392b);
+@media (prefers-reduced-motion: reduce) {
+  .dot[data-tone="busy"],
+  .meter[data-mode="indeterminate"] .meter-fill {
+    animation: none;
+  }
+  .meter[data-mode="indeterminate"] .meter-fill {
+    left: 0;
+    width: 100%;
+    opacity: 0.5;
+  }
 }
 
 [hidden] {
