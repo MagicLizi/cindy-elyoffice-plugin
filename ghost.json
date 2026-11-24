@@ -14,8 +14,8 @@
     "en": "locales/en.json",
     "zh-CN": "locales/zh-CN.json"
   },
-  "version": "0.2.0",
-  "releaseNotes": "Office files you open from Cindy with your default app can open in ElyOffice instead (needs a Cindy version that supports plugin file openers; turn it off in the plugin details). Covers Word, Excel and PowerPoint formats, including .doc, .xls, .ppt and .csv. AI can now create Word, Excel (with several sheets), PowerPoint and Markdown files and open them in ElyOffice, copy a finished document into a folder and keep editing it in ElyOffice, fill a whole block of cells at once, read cell ranges, edit Markdown in ElyMark, open PDFs in ElyPDF and open files in a new window. Fixed ElyOffice failing to start (\"no USERNAME\") when the AI opened a file. 在 Cindy 里用默认应用打开 Word、Excel、PPT 文件时，可以改用 ElyOffice 打开（需要支持插件打开文件的新版 Cindy；可在插件详情里关掉）。AI 现在可以新建 Word、Excel（可含多张工作表）、PPT 和 Markdown 并在 ElyOffice 里打开，把做好的文档复制到文件夹后在 ElyOffice 里接着改，整片填写表格、按区域读取单元格，在 ElyMark 里改 Markdown，用 ElyPDF 打开 PDF，以及在新窗口打开文件。修复 AI 打开文件时 ElyOffice 报「no USERNAME」、无法启动的问题。",
+  "version": "0.3.0",
+  "releaseNotes": "Since 0.2.0: create Word documents with headings and paragraphs, workbooks with several sheets, decks with text on each slide, and Markdown files, then open them in ElyOffice; copy a finished document into a folder and keep editing it in ElyOffice; fill a block of cells at once with formula checks; read cell ranges; read, edit and save Markdown in ElyMark; open PDFs in ElyPDF; open files in a new window. Fixed ElyOffice failing to start (\"no USERNAME\") when opened from Cindy. 相较 0.2.0：可以新建带标题和段落的 Word、带多张工作表的 Excel、带每页文字的 PPT 和 Markdown，并在 ElyOffice 里打开；把做好的文档复制到文件夹后在 ElyOffice 里接着改；整片填写表格并检查公式；按区域读取单元格；在 ElyMark 里读改和保存 Markdown；用 ElyPDF 打开 PDF；在新窗口打开文件。修复从 Cindy 打开文件时 ElyOffice 报「no USERNAME」、无法启动的问题。",
   "entry": "main.js",
   "launch": "on-demand",
   "command": "ElyOffice",
