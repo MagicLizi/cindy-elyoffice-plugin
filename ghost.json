@@ -14,8 +14,8 @@
     "en": "locales/en.json",
     "zh-CN": "locales/zh-CN.json"
   },
-  "version": "0.3.0",
-  "releaseNotes": "Since 0.2.0: create Word documents with headings and paragraphs, workbooks with several sheets, decks with text on each slide, and Markdown files, then open them in ElyOffice; copy a finished document into a folder and keep editing it in ElyOffice; fill a block of cells at once with formula checks; read cell ranges; read, edit and save Markdown in ElyMark; open PDFs in ElyPDF; open files in a new window. Fixed ElyOffice failing to start (\"no USERNAME\") when opened from Cindy. 相较 0.2.0：可以新建带标题和段落的 Word、带多张工作表的 Excel、带每页文字的 PPT 和 Markdown，并在 ElyOffice 里打开；把做好的文档复制到文件夹后在 ElyOffice 里接着改；整片填写表格并检查公式；按区域读取单元格；在 ElyMark 里读改和保存 Markdown；用 ElyPDF 打开 PDF；在新窗口打开文件。修复从 Cindy 打开文件时 ElyOffice 报「no USERNAME」、无法启动的问题。",
+  "version": "0.3.1",
+  "releaseNotes": "Since 0.3.0: on a Mac, when a file takes too long to open, the message now explains that macOS may be asking whether ElyOffice can access the Documents, Desktop or Downloads folder, and that the file opens once you allow it. 相较 0.3.0：在 Mac 上打开文件超时时，提示会说明 macOS 可能正在询问是否允许 ElyOffice 访问「文稿」「桌面」「下载」等文件夹，点「允许」后文件就会接着打开。",
   "entry": "main.js",
   "launch": "on-demand",
   "command": "ElyOffice",

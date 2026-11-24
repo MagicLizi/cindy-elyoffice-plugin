@@ -429,10 +429,15 @@ async function openDocument(file, { waitMs = 60000, newWindow = false } = {}) {
     const found = await findOpenPath(kind, p).catch(() => null);
     if (found) return { kind, app: APPS[kind].name, path: found, alreadyOpen: false, openedNow: true, ...note };
   }
-  throw new BizError(
-    'OPEN_TIMEOUT',
-    `${APPS[kind].name} 还没有打开「${path.basename(p)}」。可能文件较大仍在载入，或窗口里有需要用户确认的提示，请让用户看一下 ElyOffice 窗口后再试。`,
-  );
+  throw new BizError('OPEN_TIMEOUT', openTimeoutMessage(kind, p));
+}
+
+// 2026-11-24 在 macOS 上实测：ElyOffice 第一次读「文稿」「桌面」「下载」里的文件时，系统会弹窗问是否允许访问；
+// 用户点「允许」之前文件不会载入，插件只能等到超时。
+function openTimeoutMessage(kind, file, platform = process.platform) {
+  const base = `${APPS[kind].name} 还没有打开「${path.basename(file)}」。可能文件较大仍在载入，或窗口里有需要用户确认的提示，请让用户看一下 ElyOffice 窗口后再试。`;
+  if (platform !== 'darwin') return base;
+  return `${base}在 Mac 上第一次打开「文稿」「桌面」「下载」等文件夹里的文件时，macOS 会弹窗询问是否允许 ${APPS[kind].name} 访问，请用户在弹窗里点「允许」，文件就会接着载入。`;
 }
 
 // Cindy 的「用默认应用打开」交给插件时用:只负责拉起 ElyOffice,不等文件出现在已打开列表里
@@ -1287,5 +1292,6 @@ module.exports = {
   resolveNewPath,
   withLoginName,
   launchCommand,
+  openTimeoutMessage,
   METHODS,
 };

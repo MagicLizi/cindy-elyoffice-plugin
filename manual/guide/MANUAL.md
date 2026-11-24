@@ -82,7 +82,7 @@ Word、PPT 的替换文字里不能有换行：ElyOffice 会拒绝，所以不�
 | `UNSUPPORTED_FILE_TYPE` | 不是这个操作支持的文件类型；PDF 只能用 `open_document` 打开查看 |
 | `INVALID_ARGS`、`INVALID_PATH` | 按 message 指出的字段修正参数后重试 |
 | `PERMISSION_DENIED` | 没有权限在这个位置建文件，请用户换个位置 |
-| `OPEN_TIMEOUT` | 文件较大还在载入，或窗口里有需要用户确认的提示；请用户看一眼 ElyOffice 窗口 |
+| `OPEN_TIMEOUT` | 文件较大还在载入，或窗口里有需要用户确认的提示；请用户看一眼 ElyOffice 窗口。Mac 上第一次打开「文稿」「桌面」「下载」里的文件时，macOS 会弹窗问是否允许访问，用户点「允许」后文件会接着载入，再调一次即可 |
 | `DOCUMENT_NOT_OPEN`、`ELYOFFICE_NOT_RUNNING` | 用户关掉了窗口；需要时重新 `open_document` |
 | `DISK_CHANGED` | 文件被别的程序改过，ElyOffice 没有覆盖；请用户在 ElyOffice 窗口里决定保留哪个版本 |
 | `WRITE_FAILED` | 写入的工作表不存在或受保护；`detail.written` 是已写好的格数，可让用户按 Ctrl+Z 撤销 |

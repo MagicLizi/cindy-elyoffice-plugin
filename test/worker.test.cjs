@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {
   verifyManifest, countOccurrences, countAll, cmpVersion, requireAddress, kindOf,
-  withLoginName, launchCommand, expandAddresses, planTable,
+  withLoginName, launchCommand, expandAddresses, planTable, openTimeoutMessage,
 } = require('../node/worker.cjs');
 
 const NAME = 'ely-office-windows-x86_64.json';
@@ -125,4 +125,13 @@ test('plans a table write from one anchor cell, skipping nulls', () => {
   assert.throws(() => planTable('S!A1', [[{}]]), (e) => e.errorCode === 'INVALID_ARGS');
   const big = Array.from({ length: 26 }, () => Array.from({ length: 20 }, () => 1));
   assert.throws(() => planTable('S!A1', big), (e) => e.errorCode === 'INVALID_ARGS' && /520/.test(e.message));
+});
+
+// 依据：2026-11-24 在 XDMini（macOS 26.6）实测，ElyTable 冷启动打开「文稿」里的文件时卡在系统的文件夹访问弹窗上，
+// 插件只能报 OPEN_TIMEOUT；用户点「允许」后文件随即载入。Mac 上的超时提示要把这一步告诉用户。
+test('tells Mac users to allow folder access when opening times out', () => {
+  const mac = openTimeoutMessage('excel', '/Users/a/Documents/预算.xlsx', 'darwin');
+  assert.match(mac, /预算\.xlsx/);
+  assert.match(mac, /macOS 会弹窗询问是否允许 ElyTable 访问/);
+  assert.doesNotMatch(openTimeoutMessage('excel', 'C:\\a\\预算.xlsx', 'win32'), /macOS/);
 });
