@@ -5,12 +5,6 @@
 - **一键安装**：在插件设置里点一下，就会装好最新版 ElyOffice，不用自己找、自己下。
 - **AI 直接在你看着的窗口里改**：让 Cindy 改 Word、Excel、PPT，改动马上出现在 ElyOffice 窗口里，每一处都能按 Ctrl+Z 撤销；保存由你决定，也可以打开自动保存。
 
-## 在 Cindy 里打开 Office 文件
-
-在 Cindy 里用默认应用打开 Word、Excel、PPT 文件时（预览里的「打开」、「用默认应用打开」、文件浏览器），会改用 ElyOffice 打开。覆盖 `.docx`、`.doc`、`.xlsx`、`.xls`、`.csv`、`.pptx`、`.ppt` 以及对应的 OpenDocument 和模板格式；PDF 不接管。其他电脑上的文件、ElyOffice 打不开的文件，仍用默认应用打开。可以在插件详情的「配置」里关掉。
-
-这需要支持插件接管打开文件（`fileOpener`）的新版 Cindy。旧版 Cindy 会保留这项声明但不使用，插件其他功能照常可用。
-
 ## 可以这样说
 
 - 「用 ElyOffice 打开季度报告。」

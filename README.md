@@ -5,12 +5,6 @@ A [Cindy](https://github.com/makecindy/cindy) plugin that brings [ElyOffice](htt
 - **One-click install**: the plugin settings install the latest ElyOffice for you. Nothing to find or download by hand.
 - **AI edits in the window you are looking at**: ask Cindy to change a Word, Excel or PowerPoint file, and the change appears in the ElyOffice window right away. Every change can be undone with Ctrl+Z, and saving stays your call unless you turn on auto-save.
 
-## Opening Office files from Cindy
-
-When you open a Word, Excel or PowerPoint file from Cindy with your default app (Open in a preview, "Open with default app", the file browser), it opens in ElyOffice instead. That covers `.docx`, `.doc`, `.xlsx`, `.xls`, `.csv`, `.pptx`, `.ppt` and their OpenDocument and template variants; PDFs are left alone. Files from other computers, and anything ElyOffice can't open, still go to your default app. You can turn this off under **Configuration** in the plugin's details.
-
-This needs a Cindy version that supports plugin file openers (`fileOpener`). Older versions keep the declaration but don't use it; everything else in the plugin still works.
-
 ## What you can ask
 
 - "Open the quarterly report in ElyOffice."
