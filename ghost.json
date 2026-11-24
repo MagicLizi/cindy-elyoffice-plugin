@@ -14,8 +14,8 @@
     "en": "locales/en.json",
     "zh-CN": "locales/zh-CN.json"
   },
-  "version": "0.1.1",
-  "releaseNotes": "Redesigned ElyOffice settings, clearer install and update progress, and fixed checks for ElyOffice updates. ???? ElyOffice ??????????????????????????",
+  "version": "0.1.2",
+  "releaseNotes": "Redesigned ElyOffice settings, clearer install and update progress, and fixed checks for ElyOffice updates. 重新设计 ElyOffice 设置页，清晰显示安装与更新进度，并修复应用更新检查。",
   "entry": "main.js",
   "launch": "on-demand",
   "command": "ElyOffice",
