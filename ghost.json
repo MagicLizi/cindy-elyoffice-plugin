@@ -14,8 +14,8 @@
     "en": "locales/en.json",
     "zh-CN": "locales/zh-CN.json"
   },
-  "version": "0.3.2",
-  "releaseNotes": "Since 0.3.1: when you ask Cindy for a Word, Excel, PowerPoint or Markdown document, it now uses ElyOffice by default even if you don't mention ElyOffice. Other tools are only used for steps ElyOffice can't do yet, such as formatting, and the result still opens in ElyOffice. 相较 0.3.1：让 Cindy 做 Word、Excel、PPT 或 Markdown 文档时，即使没提 ElyOffice，也会默认用 ElyOffice 完成；只有 ElyOffice 暂时做不到的步骤（比如排版格式）才借助其他工具，做完仍在 ElyOffice 里打开。",
+  "version": "0.3.3",
+  "releaseNotes": "Since 0.3.2: when you ask Cindy for a Word, Excel, PowerPoint or Markdown document, it now uses ElyOffice by default even if you don't mention ElyOffice. Other tools are only used for steps ElyOffice can't do yet, such as formatting, and the result still opens in ElyOffice. 相较 0.3.2：让 Cindy 做 Word、Excel、PPT 或 Markdown 文档时，即使没提 ElyOffice，也会默认用 ElyOffice 完成；只有 ElyOffice 暂时做不到的步骤（比如排版格式）才借助其他工具，做完仍在 ElyOffice 里打开。",
   "entry": "main.js",
   "launch": "on-demand",
   "command": "ElyOffice",
