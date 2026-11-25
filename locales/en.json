@@ -1,7 +1,7 @@
 {
   "name": "ElyOffice",
   "description": "Open and edit Word, Excel and PowerPoint files with ElyOffice, and let AI edit them right in the ElyOffice window, where every change is visible and can be undone. ElyOffice (free and open source) can be installed with one click from the plugin settings.",
-  "whenToUse": "Use when the user mentions ElyOffice, wants to open, read or edit a Word, Excel or PowerPoint file in ElyOffice (replace text, fill in cells, change formulas, edit slide text, save), or the document is already open in ElyOffice; also installs and updates ElyOffice",
+  "whenToUse": "Default for making, opening or editing Word, Excel, PowerPoint or Markdown files unless another tool is named (\"make a spreadsheet/report\", \"write a doc\", \"make slides\", fill cells, edit text); also when ElyOffice is mentioned, a file is open in it, to view a PDF in ElyPDF, or to install ElyOffice",
   "tools": {
     "elyoffice_status": {
       "description": "Check whether ElyOffice is installed on this computer, its version, and which files are open in ElyDoc (Word), ElyTable (Excel) and ElyShow (PowerPoint). Returns installed, version and openDocuments (full paths grouped as word / excel / ppt). Call it first when you are not sure whether a file is already open; the full workflow is in ghost_manual({ ghost_id: \"elyoffice\", path: \"guide\" })."

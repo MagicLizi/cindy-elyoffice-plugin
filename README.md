@@ -21,6 +21,8 @@ This needs a Cindy version that supports plugin file openers (`fileOpener`). Old
 - "Write meeting minutes as a Word document and open it in ElyOffice."
 - "Copy the spreadsheet you just made to my desktop and open it in ElyOffice so I can keep editing."
 
+You don't have to mention ElyOffice. Whenever you ask Cindy to make or edit a Word, Excel, PowerPoint or Markdown document, such as "make a spreadsheet of this month's spending", it uses ElyOffice by default and opens the result for you. When the document needs formatting that ElyOffice doesn't yet expose to AI, Cindy creates the file with another tool first and then opens it in ElyOffice.
+
 ## Installing ElyOffice
 
 Open **Plugins → ElyOffice** and choose **Install ElyOffice**.

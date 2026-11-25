@@ -21,6 +21,8 @@
 - 「写一份会议纪要的 Word，在 ElyOffice 里打开给我看。」
 - 「把刚才做好的表格复制到桌面，用 ElyOffice 打开，我接着改。」
 
+不提 ElyOffice 也可以：只要是做或改 Word、Excel、PPT、Markdown，比如「做个本月开销统计表」，Cindy 会默认用 ElyOffice 完成并打开给你。需要排版、配色这类 ElyOffice 暂时没开放给 AI 的格式时，Cindy 先用其他工具生成文件，再在 ElyOffice 里打开。
+
 ## 安装 ElyOffice
 
 打开「插件 → ElyOffice」，点「安装 ElyOffice」：

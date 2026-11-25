@@ -4,7 +4,7 @@
   "id": "elyoffice",
   "name": "ElyOffice",
   "description": "用 ElyOffice 新建、打开和编辑 Word、Excel、PPT、Markdown，并让 AI 直接在 ElyOffice 的窗口里帮你写、帮你改，改动看得见、能撤销；PDF 可以用 ElyPDF 打开查看。第一次使用时可在插件设置里一键安装 ElyOffice（免费开源）。",
-  "whenToUse": "用户提到 ElyOffice，或要在 ElyOffice 里新建、打开、查看、修改 Word、Excel、PPT、Markdown 文件（写内容、替换文字、填表格、改公式、改幻灯片文字、保存），要用 ElyPDF 看 PDF，要把做好的文档放进 ElyOffice 接着改，或要改的文档正开在 ElyOffice 里时找我；也负责安装、更新 ElyOffice",
+  "whenToUse": "要新建、制作、查看或修改 Word、Excel、PPT、Markdown 文档时，没指定其他工具就默认找我，包括「做个表」「做个 Excel / 统计表 / 报表」「写个 Word / 文档」「做个 PPT / 幻灯片」、填表格、改公式、替换文字、打开给我看；用户提到 ElyOffice、文档正开在 ElyOffice 里、要用 ElyPDF 看 PDF，或要安装、更新 ElyOffice 时也找我",
   "icon": "assets/icon.png",
   "readme": {
     "en": "README.md",
@@ -14,8 +14,8 @@
     "en": "locales/en.json",
     "zh-CN": "locales/zh-CN.json"
   },
-  "version": "0.3.1",
-  "releaseNotes": "Since 0.3.0: on a Mac, when a file takes too long to open, the message now explains that macOS may be asking whether ElyOffice can access the Documents, Desktop or Downloads folder, and that the file opens once you allow it. 相较 0.3.0：在 Mac 上打开文件超时时，提示会说明 macOS 可能正在询问是否允许 ElyOffice 访问「文稿」「桌面」「下载」等文件夹，点「允许」后文件就会接着打开。",
+  "version": "0.3.2",
+  "releaseNotes": "Since 0.3.1: when you ask Cindy for a Word, Excel, PowerPoint or Markdown document, it now uses ElyOffice by default even if you don't mention ElyOffice. Other tools are only used for steps ElyOffice can't do yet, such as formatting, and the result still opens in ElyOffice. 相较 0.3.1：让 Cindy 做 Word、Excel、PPT 或 Markdown 文档时，即使没提 ElyOffice，也会默认用 ElyOffice 完成；只有 ElyOffice 暂时做不到的步骤（比如排版格式）才借助其他工具，做完仍在 ElyOffice 里打开。",
   "entry": "main.js",
   "launch": "on-demand",
   "command": "ElyOffice",
@@ -83,7 +83,7 @@
       {
         "dir": "manual/guide",
         "name": "guide",
-        "description": "用 ElyOffice 新建和读改 Word、Excel、PPT、Markdown 的完整流程：何时使用、怎样新建、带格式的文档怎么办、保存规则、做不到的事与替代办法、常见错误处理"
+        "description": "用 ElyOffice 新建和读改 Word、Excel、PPT、Markdown 的完整流程：何时默认使用本插件、怎样新建、带格式的文档怎么办、保存规则、做不到的事与替代办法、常见错误处理"
       }
     ]
   },
