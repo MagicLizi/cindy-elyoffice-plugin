@@ -291,3 +291,11 @@ a:focus-visible {
 [hidden] {
   display: none !important;
 }
+
+#github-token {
+  box-sizing: border-box; width: 100%; min-width: 0; padding: 7px 10px;
+  border: 1px solid var(--border-default, #e4e4e0); border-radius: 8px;
+  background: var(--surface-elevated, #fff); color: var(--text-primary, #1a1a1a); font: inherit;
+}
+#github-token:focus-visible { outline: 2px solid var(--focus-ring, #4c8dff); outline-offset: 2px; }
+#github-form .row-actions { align-items: center; }

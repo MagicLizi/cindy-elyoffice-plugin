@@ -195,6 +195,14 @@ async function hostText(url, accept) {
   if (accept) req.headers = { Accept: accept };
   var r = await cindy.fetch(req);
   if (!r || !r.ok) throw bizError('NETWORK_FAILED', '连不上 GitHub：' + ((r && r.message) || '网络错误') + '。请检查网络后再试。');
+  if (r.status === 401) throw bizError('GITHUB_AUTH_FAILED', 'GitHub Token 无效，请检查本机 GitHub 登录或替换备用 Token。');
+  if (r.status === 403 || r.status === 429) {
+    var headers = r.headers || {};
+    if (r.status === 429 || headers['x-ratelimit-remaining'] === '0' || /rate limit/i.test(String(r.body || ''))) {
+      throw bizError('GITHUB_RATE_LIMITED', 'GitHub 请求额度已用完，请稍后重试或配置 GitHub Token。');
+    }
+    throw bizError('GITHUB_AUTH_FAILED', 'GitHub 拒绝访问，请检查本机 GitHub 登录或备用 Token 的权限。');
+  }
   if (r.status !== 200) throw bizError('NETWORK_FAILED', 'GitHub 暂时不可用（' + r.status + '），请稍后再试。');
   if (r.truncated) throw bizError('NETWORK_FAILED', 'GitHub 返回的内容不完整，请稍后再试。');
   return String(r.body || '');

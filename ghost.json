@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "minCindyVersion": "0.1.144",
+  "minCindyVersion": "0.1.146",
   "id": "elyoffice",
   "name": "ElyOffice",
   "description": "用 ElyOffice 新建、打开和编辑 Word、Excel、PPT、Markdown，并让 AI 直接在 ElyOffice 的窗口里帮你写、帮你改，改动看得见、能撤销；PDF 可以用 ElyPDF 打开查看。第一次使用时可在插件设置里一键安装 ElyOffice（免费开源）。",
@@ -14,8 +14,8 @@
     "en": "locales/en.json",
     "zh-CN": "locales/zh-CN.json"
   },
-  "version": "0.3.3",
-  "releaseNotes": "Since 0.3.2: when you ask Cindy for a Word, Excel, PowerPoint or Markdown document, it now uses ElyOffice by default even if you don't mention ElyOffice. Other tools are only used for steps ElyOffice can't do yet, such as formatting, and the result still opens in ElyOffice. 相较 0.3.2：让 Cindy 做 Word、Excel、PPT 或 Markdown 文档时，即使没提 ElyOffice，也会默认用 ElyOffice 完成；只有 ElyOffice 暂时做不到的步骤（比如排版格式）才借助其他工具，做完仍在 ElyOffice 里打开。",
+  "version": "0.3.4",
+  "releaseNotes": "相较 0.3.3：新增 GitHub Token 设置，可安全保存、替换、清除备用 PAT，并优先复用本机 GitHub CLI 登录；仅向 api.github.com 注入凭证。区分 GitHub 请求限额和认证失败。",
   "entry": "main.js",
   "launch": "on-demand",
   "command": "ElyOffice",
@@ -40,6 +40,22 @@
       "api.github.com",
       "release-assets.githubusercontent.com",
       "objects.githubusercontent.com"
+    ],
+    "secrets": [
+      {
+        "key": "github_token",
+        "label": "GitHub Token",
+        "source": "gh-cli",
+        "hint": "优先使用本机 GitHub 登录；也可在设置中保存备用 Personal Access Token。",
+        "url": "https://github.com/settings/personal-access-tokens/new",
+        "inject": {
+          "header": "Authorization",
+          "format": "Bearer {value}",
+          "hosts": [
+            "api.github.com"
+          ]
+        }
+      }
     ]
   },
   "node": {

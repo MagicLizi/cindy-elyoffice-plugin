@@ -31,6 +31,24 @@
       </div>
     </section>
 
+    <section class="row" id="github-row">
+      <div class="row-main">
+        <h3 class="row-title" data-i18n="githubTitle"></h3>
+        <p class="row-desc" data-i18n="githubDesc"></p>
+        <p class="row-note" id="github-status" role="status" aria-live="polite"></p>
+      </div>
+      <form class="row-extra" id="github-form">
+        <label class="row-desc" for="github-token" data-i18n="githubLabel"></label>
+        <input id="github-token" type="password" autocomplete="new-password" spellcheck="false" autocapitalize="off" maxlength="4096" aria-describedby="github-status">
+        <div class="row-actions">
+          <button class="btn primary" id="github-save" type="submit" data-i18n="githubSave"></button>
+          <button class="btn" id="github-clear" type="button" data-i18n="githubClear" disabled></button>
+          <a href="https://github.com/settings/personal-access-tokens/new" data-i18n="githubGet"></a>
+        </div>
+        <p class="row-note" id="github-feedback" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
     <!-- AI 改完自动保存 -->
     <section class="row" id="autosave-row" hidden>
       <label class="row-main" for="autosave">

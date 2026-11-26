@@ -73,3 +73,6 @@ Package and install with Cindy's plugin tools (`ghost_forge_pack` / `ghost_forge
 ## License
 
 The plugin is licensed under Apache-2.0. ElyOffice is a separate project under the MIT license, and its bundled third-party components keep their own licenses (for example, MuPDF in ElyPDF is AGPL-3.0). This plugin does not redistribute ElyOffice; it downloads it from ElyOffice's official releases. The only ElyOffice files it bundles are three blank documents in `templates/` (MIT; see the README there for their source), used as the base for new documents. The icon is the ElyOffice logo from the [ElyOffice repository](https://github.com/ELY-Open-Source/ElyOffice) and belongs to the ElyOffice project.
+
+
+Release checks prefer local GitHub CLI sign-in. Under GitHub Connection in plugin settings, save, replace or clear a backup Personal Access Token. Cindy encrypts it and injects it only into api.github.com requests. The token is never stored in plugin configuration or logs. After saving, click Try Again or Check for Updates.

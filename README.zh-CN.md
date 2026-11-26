@@ -73,3 +73,6 @@ node --test test/*.test.cjs
 ## 许可证
 
 本插件使用 Apache-2.0 许可证。ElyOffice 是独立项目，使用 MIT 许可证，其中的第三方组件沿用各自的许可证（例如 ElyPDF 使用的 MuPDF 是 AGPL-3.0）。本插件不分发 ElyOffice，而是从 ElyOffice 官方发布页下载；只随包带了 ElyOffice 的三个空白文件（`templates/`，MIT 许可证，来源见其中的 README），用作新建文档的底稿。插件图标是 [ElyOffice 仓库](https://github.com/ELY-Open-Source/ElyOffice)中的 ElyOffice 标志，归 ElyOffice 项目所有。
+
+
+GitHub 版本检查优先使用本机 GitHub CLI 登录。也可在插件设置的“GitHub 连接”中保存、替换或清除备用 Personal Access Token。Token 由 Cindy 加密保管，仅注入 api.github.com，不进入插件配置或日志。保存后点击“重试”或“检查更新”。

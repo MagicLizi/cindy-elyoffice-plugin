@@ -8,6 +8,14 @@
 (function () {
   var STRINGS = {
     'zh-CN': {
+      githubTitle: 'GitHub 连接',
+      githubDesc: 'Token 由 Cindy 加密保存，仅用于 GitHub API 版本检查，不会发给安装包下载域名。',
+      githubLabel: '备用 GitHub Personal Access Token',
+      githubSave: '保存 Token', githubClear: '清除 Token', githubGet: '创建 Token',
+      githubHost: '已检测到本机 GitHub 登录，将优先使用。',
+      githubSaved: '备用 Token 已保存', githubMissing: '未保存备用 Token。请填写后保存，或连接本机 GitHub 账号。',
+      githubFailed: '操作失败，请重试。', githubSavedFeedback: '已保存。可点击上方“重试”或“检查更新”。',
+      githubCleared: '已清除备用 Token；本机 GitHub 登录仍可使用。', githubEmpty: '请先输入 Token。',
       appTitle: 'ElyOffice 应用',
       homeLink: '官网',
       checking: '正在检查…',
@@ -70,6 +78,8 @@
         SIGNATURE_INVALID: ['没有通过安全核对', '下载的内容和 ElyOffice 官方签名对不上，已停止，没有安装任何东西。'],
         CHECKSUM_MISMATCH: ['没有通过安全核对', '下载的内容和 ElyOffice 官方签名对不上，已停止，没有安装任何东西。'],
         MANIFEST_INVALID: ['版本信息不对', 'ElyOffice 发布页上的版本信息不符合预期，已停止。请稍后再试。'],
+        GITHUB_RATE_LIMITED: ['GitHub 请求额度已用完', '请稍后重试，或在下方配置 GitHub Token。'],
+        GITHUB_AUTH_FAILED: ['GitHub Token 无效或无权访问', '请检查本机 GitHub 登录，或在下方替换备用 Token。'],
         NETWORK_FAILED: ['连不上 GitHub', '请检查网络后重试。ElyOffice 从它在 GitHub 上的官方发布页下载。'],
         INSTALL_FAILED: ['安装没有完成', {
           busy: '部分文件正被占用。请关闭所有 ElyOffice 窗口后重试。',
@@ -85,6 +95,14 @@
       errorTitle: '出了点问题',
     },
     en: {
+      githubTitle: 'GitHub Connection',
+      githubDesc: 'Cindy encrypts the token and sends it only to the GitHub API for release checks, never to installer download hosts.',
+      githubLabel: 'Backup GitHub Personal Access Token',
+      githubSave: 'Save Token', githubClear: 'Clear Token', githubGet: 'Create Token',
+      githubHost: 'Local GitHub sign-in detected; it takes priority.',
+      githubSaved: 'Backup token saved', githubMissing: 'No backup token saved. Save a token or connect your local GitHub account.',
+      githubFailed: 'Operation failed. Please try again.', githubSavedFeedback: 'Saved. Use Try Again or Check for Updates above.',
+      githubCleared: 'Backup token cleared. Local GitHub sign-in is still available.', githubEmpty: 'Enter a token first.',
       appTitle: 'ElyOffice App',
       homeLink: 'Website',
       checking: 'Checking…',
@@ -147,6 +165,8 @@
         SIGNATURE_INVALID: ['Failed the security check', "The download doesn't match ElyOffice's official signature. Nothing was installed."],
         CHECKSUM_MISMATCH: ['Failed the security check', "The download doesn't match ElyOffice's official signature. Nothing was installed."],
         MANIFEST_INVALID: ['The release information looks wrong', 'The version information on the ElyOffice releases page is not what was expected. Try again later.'],
+        GITHUB_RATE_LIMITED: ['GitHub rate limit exceeded', 'Try later or configure a GitHub token below.'],
+        GITHUB_AUTH_FAILED: ['GitHub authentication failed', 'Check local GitHub sign-in or replace the backup token below.'],
         NETWORK_FAILED: ["Can't reach GitHub", 'Check your connection and try again. ElyOffice downloads from its official GitHub releases.'],
         INSTALL_FAILED: ["Installation didn't finish", {
           busy: 'Some files are in use. Close all ElyOffice windows and try again.',
@@ -253,7 +273,7 @@
     } else if (msg.type === 'state' && msg.state) {
       apply(msg.state);
     } else if (msg.type === 'locale') {
-      loadLang().then(render);
+      loadLang().then(function () { render(); loadGithub(); });
     }
   };
 
@@ -337,7 +357,7 @@
 
   function errorText(j) {
     var entry = T.errors[j.errorCode];
-    if (!entry) return [T.errorTitle, lang === 'zh-CN' ? j.message || '' : ''];
+    if (!entry) return [T.errorTitle, j.message || ''];
     var body = entry[1];
     if (typeof body === 'function') body = body(j.detail);
     else if (body && typeof body === 'object') body = body[j.reason] || body.generic;
@@ -507,5 +527,51 @@
     }
   }
 
-  loadLang().then(load);
+  async function loadGithub() {
+    var r = await fetch('/secrets');
+    if (!r.ok) throw new Error('SECRET_STATUS_FAILED');
+    var list = await r.json();
+    var secret = list.find(function (x) { return x.key === 'github_token'; });
+    if (!secret) throw new Error('SECRET_NOT_DECLARED');
+    var parts = [];
+    if (secret.hostAvailable && !secret.hostManagedSetup) parts.push(T.githubHost);
+    parts.push(secret.saved ? T.githubSaved + (secret.tail ? ' · …' + secret.tail : '') : T.githubMissing);
+    $('github-status').textContent = parts.join(' ');
+    $('github-clear').disabled = !secret.saved;
+  }
+
+  async function changeGithub(remove) {
+    var input = $('github-token');
+    if (!remove && !input.value.trim()) {
+      $('github-feedback').textContent = T.githubEmpty;
+      return;
+    }
+    $('github-save').disabled = true;
+    $('github-clear').disabled = true;
+    var options = { method: remove ? 'DELETE' : 'PUT' };
+    if (!remove) {
+      options.headers = { 'Content-Type': 'application/json' };
+      options.body = JSON.stringify({ value: input.value.trim() });
+    }
+    input.value = '';
+    try {
+      var response = await fetch('/secrets/github_token', options);
+      options.body = undefined;
+      if (!response.ok) throw new Error('SECRET_WRITE_FAILED');
+      $('github-feedback').textContent = remove ? T.githubCleared : T.githubSavedFeedback;
+    } catch (_) {
+      $('github-feedback').textContent = T.githubFailed;
+    } finally {
+      options.body = undefined;
+      $('github-save').disabled = false;
+      await loadGithub().catch(function () { $('github-status').textContent = T.githubFailed; });
+    }
+  }
+  $('github-form').addEventListener('submit', function (event) { event.preventDefault(); changeGithub(false); });
+  $('github-clear').addEventListener('click', function () { changeGithub(true); });
+
+  loadLang().then(function () {
+    load();
+    loadGithub().catch(function () { $('github-status').textContent = T.githubFailed; });
+  });
 })();
