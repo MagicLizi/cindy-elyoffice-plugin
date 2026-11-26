@@ -12,7 +12,7 @@ function page({saved=false, host=false, fail=false, locale='zh-CN'}={}) {
     return nodes.get(id);
   };
   let stored=saved;
-  const context={Map,Date,Promise,document:{documentElement:{},getElementById:get,querySelectorAll:()=>[],createElement:()=>get('button')},setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){},BroadcastChannel:class {postMessage(m){messages.push(m);}},fetch:async(url,opts)=>{
+  const context={Map,Date,Promise,window:{addEventListener(){}},document:{addEventListener(){},documentElement:{},getElementById:get,querySelectorAll:()=>[],createElement:()=>get('button')},setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){},BroadcastChannel:class {postMessage(m){messages.push(m);}},fetch:async(url,opts)=>{
     calls.push({url,opts});
     if(url==='/app-context') return {json:async()=>({context:{uiLocale:locale}})};
     if(url==='/secrets') return {ok:true,json:async()=>[{key:'github_token',saved:stored,hostAvailable:host,tail:stored?'1234':undefined}]};
@@ -48,7 +48,7 @@ test('HTTP authentication, rate limit, network failure and successful release ar
   const code=fs.readFileSync(path.join(root,'main.js'),'utf8').split('cindy.onHostMessage(')[0];
   let response;const ctx={BroadcastChannel:class {},cindy:{fetch:async()=>response}};vm.createContext(ctx);vm.runInContext(code,ctx);
   for(const [status,body,expected] of [[401,'','GITHUB_AUTH_FAILED'],[403,'API rate limit exceeded','GITHUB_RATE_LIMITED'],[403,'Forbidden','GITHUB_AUTH_FAILED'],[429,'','GITHUB_RATE_LIMITED'],[500,'','NETWORK_FAILED']]) {
-    response={ok:true,status,body};await assert.rejects(ctx.hostText('https://api.github.com/test'),e=>e.errorCode===expected);
+    response={ok:true,status,body};await assert.rejects(ctx.installerSizeFromApi({version:'0.1.17',assetName:'installer'}),e=>e.errorCode===expected);
   }
-  response={ok:true,status:200,body:'{}'};assert.equal(await ctx.hostText('https://api.github.com/test'),'{}');
+  response={ok:true,status:200,body:JSON.stringify({assets:[{name:'installer',size:100}]})};assert.equal(await ctx.installerSizeFromApi({version:'0.1.17',assetName:'installer'}),100);
 });

@@ -9,7 +9,7 @@
   var STRINGS = {
     'zh-CN': {
       githubTitle: 'GitHub 连接',
-      githubDesc: 'Token 由 Cindy 加密保存，仅用于 GitHub API 版本检查，不会发给安装包下载域名。',
+      githubDesc: '可选。常规版本检查无需 Token；旧版 Cindy 获取安装包大小时使用。由 Cindy 加密保存，仅发给 GitHub API。',
       githubLabel: '备用 GitHub Personal Access Token',
       githubSave: '保存 Token', githubClear: '清除 Token', githubGet: '创建 Token',
       githubHost: '已检测到本机 GitHub 登录，将优先使用。',
@@ -26,12 +26,19 @@
       upToDate: '已是最新版本',
       checkingUpdate: '正在检查更新…',
       updateCheckFailed: '暂时没能检查更新',
+      updateCheckRateLimited: '暂时没能检查更新：GitHub 限制了当前网络的查询次数，稍后再试',
       updateAvailable: function (v) { return '有新版本 ' + v; },
       installDesc: '免费开源的办公软件。装好后，Cindy 里的 Word、Excel、PPT 可以用它打开，AI 也能直接在文档里修改。',
-      installMeta: function (v, size) { return '最新版本 ' + v + ' · 下载约 ' + size + ' · 装好后约占 1 GB'; },
+      installMeta: function (v, size) {
+        return '最新版本 ' + v + (size ? ' · 下载约 ' + size : '') + ' · 装好后约占 1 GB';
+      },
       installNoteWin: '后台安装，不弹窗口；之后会随开机预热，打开文件更快。',
       installNoteMac: '下载并核对后会打开系统安装器，按提示点几下、输入一次电脑密码即可。',
       unsupportedDesc: '请到 ElyOffice 官网按说明安装，装好后这里会自动识别。',
+      manualLead: '也可以自己下载安装：',
+      manualDirect: function (v) { return '下载 ElyOffice' + (v ? ' ' + v : '') + ' 安装包'; },
+      manualPage: '打开 ElyOffice 发布页',
+      manualTail: '。装好后回到这里，会自动识别。',
       preparing: '正在准备',
       preparingDesc: '正在查找最新版本，并核对官方签名。',
       downloading: function (v) { return '正在下载 ' + (v || ''); },
@@ -96,7 +103,7 @@
     },
     en: {
       githubTitle: 'GitHub Connection',
-      githubDesc: 'Cindy encrypts the token and sends it only to the GitHub API for release checks, never to installer download hosts.',
+      githubDesc: 'Optional. Normal release checks need no token. Older Cindy uses it for the installer-size API request. Cindy encrypts it and sends it only to the GitHub API.',
       githubLabel: 'Backup GitHub Personal Access Token',
       githubSave: 'Save Token', githubClear: 'Clear Token', githubGet: 'Create Token',
       githubHost: 'Local GitHub sign-in detected; it takes priority.',
@@ -113,12 +120,19 @@
       upToDate: "You're up to date",
       checkingUpdate: 'Checking for updates…',
       updateCheckFailed: "Couldn't check for updates",
+      updateCheckRateLimited: "Couldn't check for updates: GitHub is limiting requests from this network. Try again later.",
       updateAvailable: function (v) { return 'Version ' + v + ' is available'; },
       installDesc: 'A free, open-source office suite. Once installed, Word, Excel and PowerPoint files from Cindy can open in it, and AI can edit them right in the document.',
-      installMeta: function (v, size) { return 'Latest ' + v + ' · ' + size + ' download · about 1 GB installed'; },
+      installMeta: function (v, size) {
+        return 'Latest ' + v + (size ? ' · ' + size + ' download' : '') + ' · about 1 GB installed';
+      },
       installNoteWin: 'Installs quietly in the background, then warms up at startup so files open faster.',
       installNoteMac: 'After the download is checked, the system installer opens. Follow its steps and enter your Mac password once.',
       unsupportedDesc: 'Install ElyOffice from its website. This page detects it once it is installed.',
+      manualLead: 'You can also install it yourself: ',
+      manualDirect: function (v) { return 'Download the ElyOffice' + (v ? ' ' + v : '') + ' installer'; },
+      manualPage: 'Open the ElyOffice releases page',
+      manualTail: '. Come back here afterwards and it is detected automatically.',
       preparing: 'Getting ready',
       preparingDesc: 'Finding the latest release and checking its official signature.',
       downloading: function (v) { return 'Downloading ' + (v || ''); },
@@ -183,6 +197,9 @@
     },
   };
 
+  // 已装好 ElyOffice 时，这几类失败只影响更新，不影响使用。
+  var SOFT_ERRORS = { NETWORK_FAILED: true, GITHUB_RATE_LIMITED: true, DOWNLOAD_FAILED: true };
+
   var channel = new BroadcastChannel('elyoffice');
   var pending = new Map();
   var seq = 0;
@@ -210,6 +227,10 @@
     noticeText: $('notice-text'),
     noticeList: $('notice-list'),
     appNote: $('app-note'),
+    manual: $('manual'),
+    manualLead: $('manual-lead'),
+    manualLink: $('manual-link'),
+    manualTail: $('manual-tail'),
     autosaveRow: $('autosave-row'),
     autosave: $('autosave'),
     autosaveDesc: $('autosave-desc'),
@@ -351,8 +372,19 @@
     el.noticeList.hidden = items.length === 0;
   }
 
+  // 自动下载失败时的手动下载入口。普通同页链接由 Cindy 交给系统浏览器打开（会先确认地址）。
+  function setManual(s) {
+    var m = s && s.manualDownload;
+    el.manual.hidden = !(m && typeof m.url === 'string');
+    if (el.manual.hidden) return;
+    el.manualLink.href = m.url;
+    el.manualLink.textContent = m.direct ? T.manualDirect(m.version) : T.manualPage;
+    el.manualLead.textContent = T.manualLead;
+    el.manualTail.textContent = T.manualTail;
+  }
+
   function syncExtra() {
-    el.appExtra.hidden = el.meter.hidden && el.notice.hidden && el.appNote.hidden && el.meterText.hidden;
+    el.appExtra.hidden = el.meter.hidden && el.notice.hidden && el.appNote.hidden && el.meterText.hidden && el.manual.hidden;
   }
 
   function errorText(j) {
@@ -375,6 +407,7 @@
     show(el.appNote, '');
     setMeter(null);
     setNotice(null);
+    setManual(null);
     el.appLink.hidden = s.installed || j.phase !== 'idle';
 
     if (j.phase === 'checking') {
@@ -387,8 +420,9 @@
       var line;
       if (j.phase === 'verifying') line = T.verifying;
       else if (j.retrying) line = T.retrying(j.attempt);
-      else line = [mb(j.loaded || 0) + ' / ' + mb(j.total), eta(j.loaded || 0, j.total, j.speedBps)].filter(Boolean).join(' · ');
-      setMeter(j.phase === 'verifying' ? 'indeterminate' : 'determinate', j.total ? (j.loaded || 0) / j.total : 0, line);
+      else if (j.total) line = [mb(j.loaded || 0) + ' / ' + mb(j.total), eta(j.loaded || 0, j.total, j.speedBps)].filter(Boolean).join(' · ');
+      else line = mb(j.loaded || 0); // 还不知道总大小（下载刚开始）：只显示已下载多少
+      setMeter(j.phase === 'verifying' || !j.total ? 'indeterminate' : 'determinate', j.total ? (j.loaded || 0) / j.total : 0, line);
       show(el.appNote, T.downloadNote);
       setActions(el.appActions, [button(T.cancel, '', act('cancel'))]);
     } else if (j.phase === 'installing') {
@@ -406,10 +440,23 @@
       show(el.appDesc, T.uninstallingDesc);
       setMeter('indeterminate');
       setActions(el.appActions, []);
+    } else if (j.phase === 'error' && s.installed && SOFT_ERRORS[j.errorCode]) {
+      // 已装好的 ElyOffice 照常能用：更新没查到或没下完只用灰字说明，不显示红色错误。
+      var soft = errorText(j);
+      setStatus('ok', T.ready);
+      show(el.appVersion, s.version ? T.versionLabel(s.version) : '');
+      show(el.appLatest, soft[0]);
+      show(el.appNote, soft[1]);
+      setManual(s);
+      setActions(el.appActions, [
+        button(T.dismiss, '', act('dismiss')),
+        button(j.errorCode === 'DOWNLOAD_FAILED' ? T.resume : T.retry, 'primary', act('install')),
+      ]);
     } else if (j.phase === 'error') {
       var text = errorText(j);
       setStatus('error', text[0]);
       setNotice(text[1], j.running);
+      if (SOFT_ERRORS[j.errorCode]) setManual(s);
       var retryLabel = j.errorCode === 'DOWNLOAD_FAILED' ? T.resume
         : j.errorCode === 'APPS_RUNNING' ? T.closedContinue
           : j.errorCode === 'UNINSTALL_FAILED' ? T.retryUninstall : T.retry;
@@ -437,7 +484,8 @@
         show(el.appLatest, T.updateAvailable(s.latest.version));
         setActions(el.appActions, [button(T.update(s.latest.version), 'primary', act('install'))]);
       } else {
-        show(el.appLatest, checkingUpdate ? T.checkingUpdate : s.latest ? T.upToDate : s.latestError ? T.updateCheckFailed : '');
+        var failedLine = s.latestErrorCode === 'GITHUB_RATE_LIMITED' ? T.updateCheckRateLimited : T.updateCheckFailed;
+        show(el.appLatest, checkingUpdate ? T.checkingUpdate : s.latestError ? failedLine : s.latest ? T.upToDate : '');
         setActions(el.appActions, [button(T.checkUpdate, '', checkUpdate)]);
       }
     }
@@ -574,4 +622,18 @@
     load();
     loadGithub().catch(function () { $('github-status').textContent = T.githubFailed; });
   });
+  // 用户去浏览器下载安装后切回来：重新检查是否装好。只在可能刚装好的状态下检查，并限制频率。
+  var lastRecheck = 0;
+  function recheckOnReturn() {
+    if (document.visibilityState === 'hidden' || !state) return;
+    var j = state.job || { phase: 'idle' };
+    var mayHaveInstalled = (j.phase === 'error' && SOFT_ERRORS[j.errorCode]) ||
+      (!state.installed && (j.phase === 'idle' || j.phase === 'done'));
+    if (!mayHaveInstalled || Date.now() - lastRecheck < 5000) return;
+    lastRecheck = Date.now();
+    request('state');
+  }
+  window.addEventListener('focus', recheckOnReturn);
+  document.addEventListener('visibilitychange', recheckOnReturn);
+
 })();

@@ -29,6 +29,8 @@
 
 1. 插件从 ElyOffice 官方 GitHub 发布页读取最新版本清单，用 ElyOffice 的发布密钥核对 **ed25519 签名**，对不上就停止，不下载任何东西。
 2. 安装包通过 Cindy 下载，有进度、会重试、能续传，下载完按签名清单里的 **SHA-256** 核对。
+
+检查新版本不使用 GitHub API：它对未登录的查询按网络每小时只给 60 次，用 VPN、代理等共用网络时很容易被用完。查到的结果保留 6 小时，查询失败后 10 分钟内不会自动重查（你点「检查更新」或「重试」除外）。只有旧版 Cindy 下载前需要事先知道安装包的准确大小，安装或更新时才会通过 GitHub API 查一次。自动下载实在失败时，设置页会给出 ElyOffice 安装包的下载链接，自己下载安装后回到设置页即可自动识别。
 3. Windows 上为当前用户静默安装，不需要管理员权限，也不弹窗口；macOS 上会打开系统安装器，需要输入一次电脑密码。
 
 ElyOffice 装好后约占 1 GB，并会在开机时启动文档引擎，让打开文件更快。在同一个页面也可以卸载 ElyOffice。
@@ -59,7 +61,7 @@ AI 的完整使用流程、保存规则和错误处理写在随包手册里（`m
 ## 权限
 
 - **运行本机程序**（Node 后台）：检测 ElyOffice、运行它的安装程序，调用 `ely-doc` / `ely-table` / `ely-show` / `ely-mark` 命令行，以及在你或 AI 指定的位置新建文件（不会覆盖已有文件）。
-- **网络**：`github.com`、`api.github.com` 和 GitHub 的发布下载域名，用于检查版本、下载 ElyOffice。
+- **网络**：`github.com` 和 GitHub 的发布下载域名，用于检查版本、下载 ElyOffice；`api.github.com` 只在旧版 Cindy 上用来读取安装包大小。
 - **通知**：安装完成时提醒你。
 
 ## 开发
@@ -75,4 +77,4 @@ node --test test/*.test.cjs
 本插件使用 Apache-2.0 许可证。ElyOffice 是独立项目，使用 MIT 许可证，其中的第三方组件沿用各自的许可证（例如 ElyPDF 使用的 MuPDF 是 AGPL-3.0）。本插件不分发 ElyOffice，而是从 ElyOffice 官方发布页下载；只随包带了 ElyOffice 的三个空白文件（`templates/`，MIT 许可证，来源见其中的 README），用作新建文档的底稿。插件图标是 [ElyOffice 仓库](https://github.com/ELY-Open-Source/ElyOffice)中的 ElyOffice 标志，归 ElyOffice 项目所有。
 
 
-GitHub 版本检查优先使用本机 GitHub CLI 登录。也可在插件设置的“GitHub 连接”中保存、替换或清除备用 Personal Access Token。Token 由 Cindy 加密保管，仅注入 api.github.com，不进入插件配置或日志。保存后点击“重试”或“检查更新”。
+常规版本检查直接读取签名发布文件，无需 Token；仅旧版 Cindy 获取安装包大小的 GitHub API 请求优先使用本机 GitHub CLI 登录。也可在插件设置的“GitHub 连接”中保存、替换或清除备用 Personal Access Token。Token 由 Cindy 加密保管，仅注入 api.github.com，不进入插件配置或日志。保存后点击“重试”或“检查更新”。

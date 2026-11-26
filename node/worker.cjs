@@ -361,17 +361,48 @@ function isNotRunning(text) {
   return /10061|10054|refused|积极拒绝|强迫关闭|os error 2\b|os error 61\b|os error 111\b|No such file or directory|is not running/i.test(text);
 }
 
+// ElyOffice 0.1.17 之后的命令行（主干提交 7e6264bb53）专门用退出码 3 表示应用没在运行；
+// 0.1.17 及以前只用 0、1、2。
+const EXIT_NOT_RUNNING = 3;
+
+function notRunning(res) {
+  return res.code === EXIT_NOT_RUNNING || isNotRunning(`${res.stderr} ${res.spawnError || ''}`);
+}
+
+// 已打开文件的列表：ElyOffice 0.1.17 及以前一行一个路径；之后的版本改为 JSON 数组
+// （路径里可能有换行）。两种都认，ElyOffice 升级前后插件都能用。
+function parseDocList(stdout) {
+  const s = String(stdout || '').trim();
+  if (s.startsWith('[')) {
+    // 绝对路径不会以 [ 开头，以 [ 开头就是新版的 JSON 数组。
+    try {
+      const list = JSON.parse(s);
+      if (Array.isArray(list)) return list.filter((d) => typeof d === 'string' && d);
+    } catch { /* 不是合法 JSON，按旧格式逐行读 */ }
+  }
+  return s.split(/\r?\n/).map((d) => d.trim()).filter(Boolean);
+}
+
+// 保存后打印的路径：0.1.17 及以前是原样路径，之后的版本是 JSON 字符串（带引号）。
+function parseSavedPath(stdout) {
+  const s = String(stdout || '').trim();
+  if (s.startsWith('"')) {
+    try {
+      const saved = JSON.parse(s);
+      if (typeof saved === 'string') return saved;
+    } catch { /* 不是合法 JSON，原样返回 */ }
+  }
+  return s;
+}
+
 async function listDocs(kind) {
   const det = await detect();
   const app = det.apps[kind];
   if (!app || !app.exe || !APPS[kind].verb) return { running: false, docs: [] };
   const res = await run(app.exe, [APPS[kind].verb, 'docs'], { timeoutMs: 15000 });
-  if (res.code === 0) {
-    const docs = res.stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-    return { running: true, docs };
-  }
+  if (res.code === 0) return { running: true, docs: parseDocList(res.stdout) };
   const text = `${res.stderr} ${res.spawnError || ''}`;
-  if (isNotRunning(text)) return { running: false, docs: [] };
+  if (notRunning(res)) return { running: false, docs: [] };
   throw new BizError('ELYOFFICE_CLI_FAILED', `读取 ${APPS[kind].name} 已打开的文件失败：${text.trim() || `退出码 ${res.code}`}`);
 }
 
@@ -467,7 +498,7 @@ async function ensureOpen(file, expectKinds) {
 
 function cliFailure(kind, res, action) {
   const text = `${res.stderr} ${res.spawnError || ''}`.trim();
-  if (isNotRunning(text)) {
+  if (notRunning(res)) {
     return new BizError('ELYOFFICE_NOT_RUNNING', `${APPS[kind].name} 刚刚被关闭了，请重新打开文件后再试。`);
   }
   if (/is not open in/i.test(text)) {
@@ -775,7 +806,7 @@ async function saveDocument(file) {
     throw new BizError('DOCUMENT_NOT_OPEN', `「${path.basename(p0)}」没有在 ${APPS[kind].name} 里打开，没有可保存的改动。`);
   }
   const out = await cli(kind, ['save', p], '保存');
-  return { kind, app: APPS[kind].name, path: p, savedTo: out.trim() || p };
+  return { kind, app: APPS[kind].name, path: p, savedTo: parseSavedPath(out) || p };
 }
 
 // ───────────────────────── 新建文档 ─────────────────────────
@@ -1201,19 +1232,8 @@ const METHODS = {
   detect: async (p) => detect(Boolean(p && p.force)),
   status: async () => status(),
   'apps/running': async () => ({ running: await runningApps() }),
+  // 清单与签名由插件逻辑从 GitHub 发布页取回（文本），这里核对 ElyOffice 官方签名。
   'release/verify': async (p) => verifyManifest(p || {}),
-  // 清单与签名由 Cindy 下载（cindy.downloads，已按 GitHub 给的 SHA-256 核对），这里读文件再核对官方签名。
-  'release/verify-files': async (p) => {
-    const files = (p && p.downloads) || {};
-    if (typeof files.manifest !== 'string' || typeof files.signature !== 'string') {
-      throw new BizError('MANIFEST_INVALID', '没有取到完整的版本清单或签名。');
-    }
-    const [manifest, signature] = await Promise.all([
-      fsp.readFile(files.manifest, 'utf8'),
-      fsp.readFile(files.signature, 'utf8'),
-    ]);
-    return verifyManifest({ name: p.name, manifest, signature, platformKey: p.platformKey });
-  },
   'disk/check': async (p) => diskCheck(p || {}),
   'install/start': async (p) => startInstall(p || {}),
   'install/cancel-wait': async () => cancelWaiting(),
@@ -1293,5 +1313,8 @@ module.exports = {
   withLoginName,
   launchCommand,
   openTimeoutMessage,
+  parseDocList,
+  parseSavedPath,
+  notRunning,
   METHODS,
 };

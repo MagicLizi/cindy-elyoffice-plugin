@@ -14,8 +14,8 @@
     "en": "locales/en.json",
     "zh-CN": "locales/zh-CN.json"
   },
-  "version": "0.3.4",
-  "releaseNotes": "相较 0.3.3：新增 GitHub Token 设置，可安全保存、替换、清除备用 PAT，并优先复用本机 GitHub CLI 登录；仅向 api.github.com 注入凭证。区分 GitHub 请求限额和认证失败。",
+  "version": "0.3.6",
+  "releaseNotes": "Since 0.3.5: adds secure backup GitHub Token settings and local GitHub CLI sign-in for the legacy installer-size API request. Normal release checks keep using signed release files without the GitHub API. 相较 0.3.5：新增安全的备用 GitHub Token 配置与本机 GitHub CLI 登录复用，用于旧版 Cindy 获取安装包大小的 API 请求；常规版本检查继续直接读取并验证发布文件，不调用 GitHub API。",
   "entry": "main.js",
   "launch": "on-demand",
   "command": "ElyOffice",
