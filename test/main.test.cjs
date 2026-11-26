@@ -20,6 +20,7 @@ const LEGACY = 'URL, SHA-256 and exact size (up to 8 GiB) are required';
 // fetchRoutes(url, req) 返回 cindy.fetch 的结果；downloads(req) 返回 cindy.downloads.start 的结果。
 function loadPlugin({ fetchRoutes, downloads }) {
   const requests = [];
+  const installed = { value: false, version: null };
   const starts = [];
   let kv = {};
   const host = {
@@ -37,7 +38,7 @@ function loadPlugin({ fetchRoutes, downloads }) {
     node: {
       request: async ({ method, params }) => {
         if (method === 'detect') {
-          return { ok: true, result: { ok: true, platform: 'win32', platformKey: 'windows-x86_64', installSupported: true, installed: false } };
+          return { ok: true, result: { ok: true, platform: 'win32', platformKey: 'windows-x86_64', installSupported: true, installed: installed.value, version: installed.version } };
         }
         if (method === 'job/status') return { ok: true, result: { ok: true, phase: 'idle' } };
         try {
@@ -65,7 +66,7 @@ function loadPlugin({ fetchRoutes, downloads }) {
     },
   });
   vm.runInContext(MAIN, context, { filename: 'main.js' });
-  return { context, requests, starts, kv: () => kv };
+  return { context, requests, starts, installed, kv: () => kv };
 }
 
 function releaseFiles(url, req) {
@@ -130,4 +131,41 @@ test('downloads by SHA-256 alone and asks the API for the size only on an older 
   const limited = await plugin.context.checkLatest(true);
   api = { ok: true, status: 403, body: '{"message":"API rate limit exceeded for 203.0.113.9."}' };
   await assert.rejects(plugin.context.downloadInstaller(limited, 'elyoffice-test'), (e) => e.errorCode === 'GITHUB_RATE_LIMITED');
+});
+
+test('offers a manual download link after an automatic install fails and clears it once installed by hand', async () => {
+  const plugin = loadPlugin({
+    fetchRoutes: (url, req) => (url.startsWith('https://api.github.com/')
+      ? { ok: true, status: 403, body: '{"message":"API rate limit exceeded for 203.0.113.9."}' }
+      : releaseFiles(url, req)),
+    downloads: () => ({ ok: false, message: LEGACY }),
+  });
+  await plugin.context.runInstall();
+  let state = plugin.context.buildState();
+  assert.equal(state.job.phase, 'error');
+  assert.equal(state.job.errorCode, 'GITHUB_RATE_LIMITED');
+  // 签名清单已经拿到：直接给这台电脑的安装包地址（普通下载地址，不受 API 限流）。
+  assert.deepEqual(JSON.parse(JSON.stringify(state.manualDownload)), {
+    url: `${RELEASES}download/v0.1.17/ElyOffice-0.1.17-windows-x86_64-setup.exe`,
+    direct: true,
+    version: '0.1.17',
+  });
+  // 用户自己装好后回到设置页：重新检测到已装最新版，收起上次的失败。
+  plugin.installed.value = true;
+  plugin.installed.version = '0.1.17';
+  state = await plugin.context.handleAction('state');
+  assert.equal(state.installed, true);
+  assert.equal(state.job.phase, 'idle');
+});
+
+test('falls back to the releases page when even the signed manifest could not be fetched', async () => {
+  const plugin = loadPlugin({
+    fetchRoutes: () => ({ ok: false, message: 'getaddrinfo ENOTFOUND github.com' }),
+    downloads: () => assert.fail('no download expected'),
+  });
+  await plugin.context.runInstall();
+  const state = plugin.context.buildState();
+  assert.equal(state.job.errorCode, 'NETWORK_FAILED');
+  assert.equal(state.manualDownload.url, `${RELEASES}latest`);
+  assert.equal(state.manualDownload.direct, false);
 });

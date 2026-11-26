@@ -17,6 +17,10 @@ var LATEST_RETRY_MS = 10 * 60 * 1000;
 var UNKNOWN_INSTALLER_BYTES = 512 * 1024 * 1024;
 // 旧版 Cindy 拒绝不带大小的下载时回的原话（Cindy 0.1.144 起不变）。
 var LEGACY_SIZE_REQUIRED = 'URL, SHA-256 and exact size (up to 8 GiB) are required';
+// 自动下载失败时给用户的手动下载入口：优先这台电脑的安装包直链（来自验过签的清单），否则发布页。
+var RELEASES_PAGE_URL = 'https://github.com/' + REPO + '/releases/latest';
+// 这几类失败换手动下载能解决；签名、校验值对不上这类安全问题不引导用户手动安装。
+var MANUAL_DOWNLOAD_ERRORS = { NETWORK_FAILED: true, GITHUB_RATE_LIMITED: true, DOWNLOAD_FAILED: true };
 
 var channel = new BroadcastChannel('elyoffice');
 var job = { phase: 'idle' };
@@ -141,6 +145,17 @@ async function notify(text, tone) {
 
 // ───────────── 状态与广播 ─────────────
 
+function manualDownload() {
+  var det = detectInfo && detectInfo.ok ? detectInfo : null;
+  var lv = latest && latest.value && latest.value.ok ? latest.value : null;
+  // 清单里的地址已由后台核对过签名和前缀（只会是 ElyOffice 官方发布页的下载地址）。
+  if (det && lv && lv.platformKey === det.platformKey && typeof lv.url === 'string' &&
+      lv.url.indexOf(RELEASE_DOWNLOAD_PREFIX) === 0) {
+    return { url: lv.url, direct: true, version: lv.version };
+  }
+  return { url: RELEASES_PAGE_URL, direct: false, version: null };
+}
+
 function buildState() {
   var det = detectInfo && detectInfo.ok ? detectInfo : null;
   var lv = latest && latest.value && latest.value.ok ? latest.value : null;
@@ -155,6 +170,7 @@ function buildState() {
     latestError: failure ? failure.message : null,
     latestErrorCode: failure ? failure.errorCode : null,
     updateAvailable: Boolean(det && det.installed && lv && det.version && cmpVersion(lv.version, det.version) > 0),
+    manualDownload: manualDownload(),
     job: job,
     autoSave: autoSave,
   };
@@ -610,8 +626,14 @@ async function recoverJob() {
 
 async function handleAction(action, args) {
   if (action === 'state') {
-    await refreshDetect(true);
+    var det = await refreshDetect(true);
     await recoverJob();
+    // 自动下载失败后用户自己下载安装好了（版本不旧于已知最新版）：上次的失败已经没意义，收起错误。
+    var known = latest && latest.value && latest.value.ok ? latest.value : null;
+    if (job.phase === 'error' && MANUAL_DOWNLOAD_ERRORS[job.errorCode] && det.ok && det.installed &&
+        (!known || (det.version && cmpVersion(det.version, known.version) >= 0))) {
+      setJob({ phase: 'idle' }, true);
+    }
     var kv = await readKv();
     autoSave = kv[KV_AUTOSAVE] === true;
     // 有存下的结果就直接用，查询失败后 10 分钟内也不再请求，用户点「检查更新」才强制重查。

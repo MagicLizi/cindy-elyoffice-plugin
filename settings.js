@@ -27,6 +27,10 @@
       installNoteWin: '后台安装，不弹窗口；之后会随开机预热，打开文件更快。',
       installNoteMac: '下载并核对后会打开系统安装器，按提示点几下、输入一次电脑密码即可。',
       unsupportedDesc: '请到 ElyOffice 官网按说明安装，装好后这里会自动识别。',
+      manualLead: '也可以自己下载安装：',
+      manualDirect: function (v) { return '下载 ElyOffice' + (v ? ' ' + v : '') + ' 安装包'; },
+      manualPage: '打开 ElyOffice 发布页',
+      manualTail: '。装好后回到这里，会自动识别。',
       preparing: '正在准备',
       preparingDesc: '正在查找最新版本，并核对官方签名。',
       downloading: function (v) { return '正在下载 ' + (v || ''); },
@@ -108,6 +112,10 @@
       installNoteWin: 'Installs quietly in the background, then warms up at startup so files open faster.',
       installNoteMac: 'After the download is checked, the system installer opens. Follow its steps and enter your Mac password once.',
       unsupportedDesc: 'Install ElyOffice from its website. This page detects it once it is installed.',
+      manualLead: 'You can also install it yourself: ',
+      manualDirect: function (v) { return 'Download the ElyOffice' + (v ? ' ' + v : '') + ' installer'; },
+      manualPage: 'Open the ElyOffice releases page',
+      manualTail: '. Come back here afterwards and it is detected automatically.',
       preparing: 'Getting ready',
       preparingDesc: 'Finding the latest release and checking its official signature.',
       downloading: function (v) { return 'Downloading ' + (v || ''); },
@@ -201,6 +209,10 @@
     noticeText: $('notice-text'),
     noticeList: $('notice-list'),
     appNote: $('app-note'),
+    manual: $('manual'),
+    manualLead: $('manual-lead'),
+    manualLink: $('manual-link'),
+    manualTail: $('manual-tail'),
     autosaveRow: $('autosave-row'),
     autosave: $('autosave'),
     autosaveDesc: $('autosave-desc'),
@@ -342,8 +354,19 @@
     el.noticeList.hidden = items.length === 0;
   }
 
+  // 自动下载失败时的手动下载入口。普通同页链接由 Cindy 交给系统浏览器打开（会先确认地址）。
+  function setManual(s) {
+    var m = s && s.manualDownload;
+    el.manual.hidden = !(m && typeof m.url === 'string');
+    if (el.manual.hidden) return;
+    el.manualLink.href = m.url;
+    el.manualLink.textContent = m.direct ? T.manualDirect(m.version) : T.manualPage;
+    el.manualLead.textContent = T.manualLead;
+    el.manualTail.textContent = T.manualTail;
+  }
+
   function syncExtra() {
-    el.appExtra.hidden = el.meter.hidden && el.notice.hidden && el.appNote.hidden && el.meterText.hidden;
+    el.appExtra.hidden = el.meter.hidden && el.notice.hidden && el.appNote.hidden && el.meterText.hidden && el.manual.hidden;
   }
 
   function errorText(j) {
@@ -366,6 +389,7 @@
     show(el.appNote, '');
     setMeter(null);
     setNotice(null);
+    setManual(null);
     el.appLink.hidden = s.installed || j.phase !== 'idle';
 
     if (j.phase === 'checking') {
@@ -405,6 +429,7 @@
       show(el.appVersion, s.version ? T.versionLabel(s.version) : '');
       show(el.appLatest, soft[0]);
       show(el.appNote, soft[1]);
+      setManual(s);
       setActions(el.appActions, [
         button(T.dismiss, '', act('dismiss')),
         button(j.errorCode === 'DOWNLOAD_FAILED' ? T.resume : T.retry, 'primary', act('install')),
@@ -413,6 +438,7 @@
       var text = errorText(j);
       setStatus('error', text[0]);
       setNotice(text[1], j.running);
+      if (SOFT_ERRORS[j.errorCode]) setManual(s);
       var retryLabel = j.errorCode === 'DOWNLOAD_FAILED' ? T.resume
         : j.errorCode === 'APPS_RUNNING' ? T.closedContinue
           : j.errorCode === 'UNINSTALL_FAILED' ? T.retryUninstall : T.retry;
@@ -530,6 +556,20 @@
       render();
     }
   }
+
+  // 用户去浏览器下载安装后切回来：重新检查是否装好。只在可能刚装好的状态下检查，并限制频率。
+  var lastRecheck = 0;
+  function recheckOnReturn() {
+    if (document.visibilityState === 'hidden' || !state) return;
+    var j = state.job || { phase: 'idle' };
+    var mayHaveInstalled = (j.phase === 'error' && SOFT_ERRORS[j.errorCode]) ||
+      (!state.installed && (j.phase === 'idle' || j.phase === 'done'));
+    if (!mayHaveInstalled || Date.now() - lastRecheck < 5000) return;
+    lastRecheck = Date.now();
+    request('state');
+  }
+  window.addEventListener('focus', recheckOnReturn);
+  document.addEventListener('visibilitychange', recheckOnReturn);
 
   loadLang().then(load);
 })();
