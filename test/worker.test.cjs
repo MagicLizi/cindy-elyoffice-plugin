@@ -8,6 +8,7 @@ const path = require('node:path');
 const {
   verifyManifest, countOccurrences, countAll, cmpVersion, requireAddress, kindOf,
   withLoginName, launchCommand, expandAddresses, planTable, openTimeoutMessage,
+  parseDocList, parseSavedPath, notRunning,
 } = require('../node/worker.cjs');
 
 const NAME = 'ely-office-windows-x86_64.json';
@@ -134,4 +135,28 @@ test('tells Mac users to allow folder access when opening times out', () => {
   assert.match(mac, /预算\.xlsx/);
   assert.match(mac, /macOS 会弹窗询问是否允许 ElyTable 访问/);
   assert.doesNotMatch(openTimeoutMessage('excel', 'C:\\a\\预算.xlsx', 'win32'), /macOS/);
+});
+
+// 依据：ElyOffice 0.1.17 的 docs 用换行拼接路径（crates/ely-office/src/remote.rs 的 files.join("\n")）；
+// 主干提交 7e6264bb53（2026-11-25，尚未发版）改为 serde_json 输出 JSON 数组、save 输出 JSON 字符串、
+// 没在运行时退出码 3。插件旧写法按行切分，新版会把整个数组当成一个路径，所有「文件是否已打开」都判错。
+test('reads the open-file list from ElyOffice 0.1.17 and from the JSON format on its main branch', () => {
+  assert.deepEqual(parseDocList('C:\\a\\周报.docx\r\nC:\\b c\\预算.xlsx\r\n'), ['C:\\a\\周报.docx', 'C:\\b c\\预算.xlsx']);
+  assert.deepEqual(parseDocList(''), []);
+  assert.deepEqual(
+    parseDocList('["C:\\\\a\\\\周报.docx","/Users/a/第一行\\n第二行.docx"]\n'),
+    ['C:\\a\\周报.docx', '/Users/a/第一行\n第二行.docx'],
+  );
+  assert.deepEqual(parseDocList('[]\n'), []);
+});
+
+test('reads the saved path in both the plain and the JSON format', () => {
+  assert.equal(parseSavedPath('C:\\a\\周报.docx\r\n'), 'C:\\a\\周报.docx');
+  assert.equal(parseSavedPath('"C:\\\\a\\\\周报.docx"\n'), 'C:\\a\\周报.docx');
+});
+
+test('treats exit code 3 as the app not running, as the newer command line reports it', () => {
+  assert.equal(notRunning({ code: 3, stderr: 'ely-doc: ElyDoc is not running; use open FILE to start it\n' }), true);
+  assert.equal(notRunning({ code: 3, stderr: '' }), true);
+  assert.equal(notRunning({ code: 1, stderr: 'ely-doc: C:\\a.docx is not open in ElyDoc\n' }), false);
 });
