@@ -1201,19 +1201,8 @@ const METHODS = {
   detect: async (p) => detect(Boolean(p && p.force)),
   status: async () => status(),
   'apps/running': async () => ({ running: await runningApps() }),
+  // 清单与签名由插件逻辑从 GitHub 发布页取回（文本），这里核对 ElyOffice 官方签名。
   'release/verify': async (p) => verifyManifest(p || {}),
-  // 清单与签名由 Cindy 下载（cindy.downloads，已按 GitHub 给的 SHA-256 核对），这里读文件再核对官方签名。
-  'release/verify-files': async (p) => {
-    const files = (p && p.downloads) || {};
-    if (typeof files.manifest !== 'string' || typeof files.signature !== 'string') {
-      throw new BizError('MANIFEST_INVALID', '没有取到完整的版本清单或签名。');
-    }
-    const [manifest, signature] = await Promise.all([
-      fsp.readFile(files.manifest, 'utf8'),
-      fsp.readFile(files.signature, 'utf8'),
-    ]);
-    return verifyManifest({ name: p.name, manifest, signature, platformKey: p.platformKey });
-  },
   'disk/check': async (p) => diskCheck(p || {}),
   'install/start': async (p) => startInstall(p || {}),
   'install/cancel-wait': async () => cancelWaiting(),

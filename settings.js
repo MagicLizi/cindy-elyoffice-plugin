@@ -18,9 +18,12 @@
       upToDate: '已是最新版本',
       checkingUpdate: '正在检查更新…',
       updateCheckFailed: '暂时没能检查更新',
+      updateCheckRateLimited: '暂时没能检查更新：GitHub 限制了当前网络的查询次数，稍后再试',
       updateAvailable: function (v) { return '有新版本 ' + v; },
       installDesc: '免费开源的办公软件。装好后，Cindy 里的 Word、Excel、PPT 可以用它打开，AI 也能直接在文档里修改。',
-      installMeta: function (v, size) { return '最新版本 ' + v + ' · 下载约 ' + size + ' · 装好后约占 1 GB'; },
+      installMeta: function (v, size) {
+        return '最新版本 ' + v + (size ? ' · 下载约 ' + size : '') + ' · 装好后约占 1 GB';
+      },
       installNoteWin: '后台安装，不弹窗口；之后会随开机预热，打开文件更快。',
       installNoteMac: '下载并核对后会打开系统安装器，按提示点几下、输入一次电脑密码即可。',
       unsupportedDesc: '请到 ElyOffice 官网按说明安装，装好后这里会自动识别。',
@@ -71,6 +74,7 @@
         CHECKSUM_MISMATCH: ['没有通过安全核对', '下载的内容和 ElyOffice 官方签名对不上，已停止，没有安装任何东西。'],
         MANIFEST_INVALID: ['版本信息不对', 'ElyOffice 发布页上的版本信息不符合预期，已停止。请稍后再试。'],
         NETWORK_FAILED: ['连不上 GitHub', '请检查网络后重试。ElyOffice 从它在 GitHub 上的官方发布页下载。'],
+        GITHUB_RATE_LIMITED: ['GitHub 暂时限制了查询次数', 'GitHub 暂时限制了你当前网络的查询次数（使用 VPN、代理或多人共用网络时常见），通常一小时内恢复。换个网络（比如手机热点）可以马上重试。'],
         INSTALL_FAILED: ['安装没有完成', {
           busy: '部分文件正被占用。请关闭所有 ElyOffice 窗口后重试。',
           timeout: '等了很久也没有看到 ElyOffice 装好。如果系统安装器还开着，请完成安装后重试。',
@@ -95,9 +99,12 @@
       upToDate: "You're up to date",
       checkingUpdate: 'Checking for updates…',
       updateCheckFailed: "Couldn't check for updates",
+      updateCheckRateLimited: "Couldn't check for updates: GitHub is limiting requests from this network. Try again later.",
       updateAvailable: function (v) { return 'Version ' + v + ' is available'; },
       installDesc: 'A free, open-source office suite. Once installed, Word, Excel and PowerPoint files from Cindy can open in it, and AI can edit them right in the document.',
-      installMeta: function (v, size) { return 'Latest ' + v + ' · ' + size + ' download · about 1 GB installed'; },
+      installMeta: function (v, size) {
+        return 'Latest ' + v + (size ? ' · ' + size + ' download' : '') + ' · about 1 GB installed';
+      },
       installNoteWin: 'Installs quietly in the background, then warms up at startup so files open faster.',
       installNoteMac: 'After the download is checked, the system installer opens. Follow its steps and enter your Mac password once.',
       unsupportedDesc: 'Install ElyOffice from its website. This page detects it once it is installed.',
@@ -148,6 +155,7 @@
         CHECKSUM_MISMATCH: ['Failed the security check', "The download doesn't match ElyOffice's official signature. Nothing was installed."],
         MANIFEST_INVALID: ['The release information looks wrong', 'The version information on the ElyOffice releases page is not what was expected. Try again later.'],
         NETWORK_FAILED: ["Can't reach GitHub", 'Check your connection and try again. ElyOffice downloads from its official GitHub releases.'],
+        GITHUB_RATE_LIMITED: ['GitHub is limiting requests', 'GitHub has temporarily limited requests from your current network (common with VPNs, proxies or shared networks). It usually clears within an hour. Switching networks, such as to a phone hotspot, lets you try again right away.'],
         INSTALL_FAILED: ["Installation didn't finish", {
           busy: 'Some files are in use. Close all ElyOffice windows and try again.',
           timeout: "ElyOffice still isn't installed. If the system installer is open, finish it and try again.",
@@ -162,6 +170,9 @@
       errorTitle: 'Something went wrong',
     },
   };
+
+  // 已装好 ElyOffice 时，这几类失败只影响更新，不影响使用。
+  var SOFT_ERRORS = { NETWORK_FAILED: true, GITHUB_RATE_LIMITED: true, DOWNLOAD_FAILED: true };
 
   var channel = new BroadcastChannel('elyoffice');
   var pending = new Map();
@@ -367,8 +378,9 @@
       var line;
       if (j.phase === 'verifying') line = T.verifying;
       else if (j.retrying) line = T.retrying(j.attempt);
-      else line = [mb(j.loaded || 0) + ' / ' + mb(j.total), eta(j.loaded || 0, j.total, j.speedBps)].filter(Boolean).join(' · ');
-      setMeter(j.phase === 'verifying' ? 'indeterminate' : 'determinate', j.total ? (j.loaded || 0) / j.total : 0, line);
+      else if (j.total) line = [mb(j.loaded || 0) + ' / ' + mb(j.total), eta(j.loaded || 0, j.total, j.speedBps)].filter(Boolean).join(' · ');
+      else line = mb(j.loaded || 0); // 还不知道总大小（下载刚开始）：只显示已下载多少
+      setMeter(j.phase === 'verifying' || !j.total ? 'indeterminate' : 'determinate', j.total ? (j.loaded || 0) / j.total : 0, line);
       show(el.appNote, T.downloadNote);
       setActions(el.appActions, [button(T.cancel, '', act('cancel'))]);
     } else if (j.phase === 'installing') {
@@ -386,6 +398,17 @@
       show(el.appDesc, T.uninstallingDesc);
       setMeter('indeterminate');
       setActions(el.appActions, []);
+    } else if (j.phase === 'error' && s.installed && SOFT_ERRORS[j.errorCode]) {
+      // 已装好的 ElyOffice 照常能用：更新没查到或没下完只用灰字说明，不显示红色错误。
+      var soft = errorText(j);
+      setStatus('ok', T.ready);
+      show(el.appVersion, s.version ? T.versionLabel(s.version) : '');
+      show(el.appLatest, soft[0]);
+      show(el.appNote, soft[1]);
+      setActions(el.appActions, [
+        button(T.dismiss, '', act('dismiss')),
+        button(j.errorCode === 'DOWNLOAD_FAILED' ? T.resume : T.retry, 'primary', act('install')),
+      ]);
     } else if (j.phase === 'error') {
       var text = errorText(j);
       setStatus('error', text[0]);
@@ -417,7 +440,8 @@
         show(el.appLatest, T.updateAvailable(s.latest.version));
         setActions(el.appActions, [button(T.update(s.latest.version), 'primary', act('install'))]);
       } else {
-        show(el.appLatest, checkingUpdate ? T.checkingUpdate : s.latest ? T.upToDate : s.latestError ? T.updateCheckFailed : '');
+        var failedLine = s.latestErrorCode === 'GITHUB_RATE_LIMITED' ? T.updateCheckRateLimited : T.updateCheckFailed;
+        show(el.appLatest, checkingUpdate ? T.checkingUpdate : s.latestError ? failedLine : s.latest ? T.upToDate : '');
         setActions(el.appActions, [button(T.checkUpdate, '', checkUpdate)]);
       }
     }

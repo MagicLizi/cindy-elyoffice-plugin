@@ -3,19 +3,26 @@
  * ElyOffice 插件逻辑（浏览器沙箱）。
  * - 接 AI 工具调用，转给 node/worker.cjs 调 ElyOffice 命令行；
  * - 为设置页提供安装 / 更新 / 卸载 / 自动保存的状态与操作（经 BroadcastChannel）；
- * - 下载走 Cindy 自带的 cindy.downloads（强制校验值与大小、进度、重试、续传）。
+ * - 下载走 Cindy 自带的 cindy.downloads（强制校验 SHA-256，带进度、重试、续传）。
  */
 
 var REPO = 'ELY-Open-Source/ElyOffice';
 var KV_READY = 'elyoffice_ready';
 var KV_AUTOSAVE = 'autoSave';
+var KV_LATEST = 'latestRelease';
+var KV_LATEST_FAILURE = 'latestReleaseFailure';
 var LATEST_TTL_MS = 6 * 60 * 60 * 1000;
+var LATEST_RETRY_MS = 10 * 60 * 1000;
+// 安装包大小未知时，按这个量预估下载所需的磁盘空间（当前安装包 240–370 MB）。
+var UNKNOWN_INSTALLER_BYTES = 512 * 1024 * 1024;
+// 旧版 Cindy 拒绝不带大小的下载时回的原话（Cindy 0.1.144 起不变）。
+var LEGACY_SIZE_REQUIRED = 'URL, SHA-256 and exact size (up to 8 GiB) are required';
 
 var channel = new BroadcastChannel('elyoffice');
 var job = { phase: 'idle' };
 var detectInfo = null;
-var latest = null; // { at, value }
-var latestError = null;
+var latest = null; // { at, value }：最近一次查到并核对过签名的版本
+var latestFailure = null; // { at, value }：最近一次查询失败
 var autoSave = false;
 var activeDownloadId = null;
 var cancelRequested = false;
@@ -137,14 +144,16 @@ async function notify(text, tone) {
 function buildState() {
   var det = detectInfo && detectInfo.ok ? detectInfo : null;
   var lv = latest && latest.value && latest.value.ok ? latest.value : null;
+  var failure = currentLatestFailure();
   return {
     ready: Boolean(det),
     platform: det ? det.platform : null,
     installSupported: det ? det.installSupported : null,
     installed: det ? det.installed : false,
     version: det ? det.version : null,
-    latest: lv ? { version: lv.version, bytes: lv.bytes, notesUrl: lv.notesUrl } : null,
-    latestError: latestError,
+    latest: lv ? { version: lv.version, bytes: lv.bytes || null, notesUrl: lv.notesUrl } : null,
+    latestError: failure ? failure.message : null,
+    latestErrorCode: failure ? failure.errorCode : null,
     updateAvailable: Boolean(det && det.installed && lv && det.version && cmpVersion(lv.version, det.version) > 0),
     job: job,
     autoSave: autoSave,
@@ -189,105 +198,240 @@ async function refreshDetect(force) {
 }
 
 // ───────────── 最新版本（经 Cindy 网络通道取，后台核对签名） ─────────────
-
-async function hostText(url, accept) {
-  var req = { url: url, method: 'GET', timeoutMs: 30000 };
-  if (accept) req.headers = { Accept: accept };
-  var r = await cindy.fetch(req);
-  if (!r || !r.ok) throw bizError('NETWORK_FAILED', '连不上 GitHub：' + ((r && r.message) || '网络错误') + '。请检查网络后再试。');
-  if (r.status !== 200) throw bizError('NETWORK_FAILED', 'GitHub 暂时不可用（' + r.status + '），请稍后再试。');
-  if (r.truncated) throw bizError('NETWORK_FAILED', 'GitHub 返回的内容不完整，请稍后再试。');
-  return String(r.body || '');
-}
+//
+// 查版本不调用 api.github.com：GitHub 对未登录的 API 查询按网络出口每小时只给 60 次，
+// VPN、代理或多人共用的出口很容易被别人用完。版本清单和签名直接从发布页的下载地址取，
+// 不占这个额度；签名照旧用 ElyOffice 官方公钥核对。只有旧版 Cindy 下载前必须知道
+// 安装包的准确大小，那时才查一次 API（见 installerSizeFromApi）。
 
 var RELEASE_DOWNLOAD_PREFIX = 'https://github.com/' + REPO + '/releases/download/';
+var RATE_LIMIT_MESSAGE = 'GitHub 暂时限制了你当前网络的查询次数（使用 VPN／代理或多人共用网络时常见），通常一小时内恢复；换个网络可以马上重试。';
 
-function assetDigest(asset) {
-  return asset && typeof asset.digest === 'string' && /^sha256:[a-f0-9]{64}$/.test(asset.digest)
-    ? asset.digest.slice(7)
+function sleep(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
+function isRateLimited(status, body) {
+  return status === 429 || (status === 403 && /rate limit/i.test(String(body || '')));
+}
+
+function httpError(status, body) {
+  if (isRateLimited(status, body)) return bizError('GITHUB_RATE_LIMITED', RATE_LIMIT_MESSAGE);
+  return bizError('NETWORK_FAILED', 'GitHub 暂时不可用（' + status + '），请稍后再试。');
+}
+
+// 清单和签名在发布页上标成二进制类型，文本方式取不回；按媒体方式取时，
+// Cindy 会把其中的 UTF-8 文本照样按文本交回。返回 null 表示发布页上没有这个文件。
+async function fetchReleaseText(url) {
+  for (var attempt = 0; ; attempt += 1) {
+    var r;
+    try {
+      r = await cindy.fetch({ url: url, method: 'GET', as: 'media', timeoutMs: 30000 });
+    } catch (e) {
+      r = { ok: false, message: (e && e.message) || String(e) };
+    }
+    if (r && r.ok) {
+      if (r.status === 404) return null;
+      if (r.status !== 200) throw httpError(r.status, r.body);
+      if (r.media || typeof r.body !== 'string' || r.truncated) {
+        throw bizError('MANIFEST_INVALID', 'ElyOffice 发布页上的版本清单不是预期的内容，已停止。');
+      }
+      return r.body;
+    }
+    var message = (r && r.message) || '网络错误';
+    // Cindy 的大文件通道同一时间只处理一单，正忙时稍等再取。
+    if (/正忙|busy/i.test(message) && attempt < 3) {
+      await sleep(500 * (attempt + 1));
+      continue;
+    }
+    throw bizError('NETWORK_FAILED', '连不上 GitHub：' + message + '。请检查网络后再试。');
+  }
+}
+
+// 只用来拼签名地址；真正的版本号以验签后的清单为准。
+function unverifiedManifestVersion(text) {
+  try {
+    var v = JSON.parse(text).version;
+    return typeof v === 'string' && /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-[0-9A-Za-z.-]{1,32})?$/.test(v) ? v : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function fetchSignedRelease(platformKey) {
+  var name = 'ely-office-' + platformKey + '.json';
+  var manifest = await fetchReleaseText('https://github.com/' + REPO + '/releases/latest/download/' + name);
+  if (manifest === null) throw bizError('UNSUPPORTED_PLATFORM', '最新版本没有提供这台电脑可用的安装包。');
+  var version = unverifiedManifestVersion(manifest);
+  if (!version) throw bizError('MANIFEST_INVALID', 'ElyOffice 发布页上的版本清单格式不对，已停止。');
+  // 签名按清单里的版本固定到同一个发布，两次请求之间正好发了新版也不会拿到不配对的签名。
+  var signature = await fetchReleaseText(RELEASE_DOWNLOAD_PREFIX + 'v' + encodeURIComponent(version) + '/' + name + '.sig');
+  if (signature === null) throw bizError('MANIFEST_INVALID', 'ElyOffice 发布页上缺少版本清单的签名，已停止。');
+  var v = await nodeCall('release/verify', { name: name, manifest: manifest, signature: signature, platformKey: platformKey });
+  if (!v.ok) throw bizError(v.errorCode, v.message);
+  if (v.version !== version) throw bizError('MANIFEST_INVALID', 'ElyOffice 发布页上的版本信息前后不一致，已停止。');
+  return {
+    ok: true,
+    platformKey: platformKey,
+    version: v.version,
+    url: v.url,
+    sha256: v.sha256,
+    assetName: v.assetName,
+    bytes: null,
+    notesUrl: 'https://github.com/' + REPO + '/releases/tag/v' + v.version,
+  };
+}
+
+// 旧版 Cindy 的下载必须事先给出准确大小，签名清单里没有，只能查一次 API。
+async function installerSizeFromApi(rel) {
+  var r;
+  try {
+    r = await cindy.fetch({
+      url: 'https://api.github.com/repos/' + REPO + '/releases/tags/v' + encodeURIComponent(rel.version),
+      method: 'GET',
+      headers: { Accept: 'application/vnd.github+json' },
+      timeoutMs: 30000,
+    });
+  } catch (e) {
+    r = { ok: false, message: (e && e.message) || String(e) };
+  }
+  if (!r || !r.ok) throw bizError('NETWORK_FAILED', '连不上 GitHub：' + ((r && r.message) || '网络错误') + '。请检查网络后再试。');
+  if (r.status !== 200) throw httpError(r.status, r.body);
+  if (r.truncated) throw bizError('NETWORK_FAILED', 'GitHub 返回的内容不完整，请稍后再试。');
+  var release;
+  try {
+    release = JSON.parse(String(r.body || ''));
+  } catch (e) {
+    throw bizError('NETWORK_FAILED', 'GitHub 返回的发布信息看不懂，请稍后再试。');
+  }
+  var installer = ((release && release.assets) || []).find(function (a) { return a && a.name === rel.assetName; });
+  if (!installer || !Number.isSafeInteger(installer.size) || installer.size <= 0) {
+    throw bizError('MANIFEST_INVALID', '没有在 ElyOffice 发布页找到安装包的大小信息。');
+  }
+  var digest = typeof installer.digest === 'string' && /^sha256:[a-f0-9]{64}$/.test(installer.digest)
+    ? installer.digest.slice(7)
     : null;
-}
-
-function findAsset(release, name) {
-  return (release.assets || []).find(function (a) { return a && a.name === name; }) || null;
-}
-
-// 版本清单和签名在 GitHub 上标成二进制类型，cindy.fetch 的文本模式取不回；
-// 改用 Cindy 的下载能力，按 GitHub 给的 SHA-256 与大小核对后交给后台读取。
-async function downloadSmallAsset(asset, kind) {
-  var sha = assetDigest(asset);
-  if (!sha || !Number.isSafeInteger(asset.size) || asset.size <= 0 || asset.size > 1024 * 1024 ||
-      typeof asset.browser_download_url !== 'string' || asset.browser_download_url.indexOf(RELEASE_DOWNLOAD_PREFIX) !== 0) {
-    throw bizError('MANIFEST_INVALID', 'ElyOffice 发布页上的版本清单信息不完整，已停止。');
+  if (digest && digest !== rel.sha256) {
+    throw bizError('CHECKSUM_MISMATCH', 'GitHub 上的安装包和 ElyOffice 官方签名清单对不上，已停止。');
   }
-  var d = await cindy.downloads.start({
-    id: ('elyoffice-' + kind + '-' + sha.slice(0, 16)),
-    url: asset.browser_download_url,
-    sha256: sha,
-    bytes: asset.size,
-  });
-  if (!d || !d.ok) {
-    throw bizError('NETWORK_FAILED', '连不上 GitHub：' + ((d && d.message) || '下载版本清单失败') + '。请检查网络后再试。');
-  }
-  return d.token;
+  return installer.size;
 }
 
+// 新版 Cindy 只凭 SHA-256 就能下载，大小从下载响应里读；旧版会明确拒绝，再补查大小重下。
+async function downloadInstaller(rel, id) {
+  var req = { id: id, url: rel.url, sha256: rel.sha256 };
+  if (rel.bytes) req.bytes = rel.bytes;
+  var d = await cindy.downloads.start(req);
+  if (rel.bytes || !d || d.ok !== false || d.message !== LEGACY_SIZE_REQUIRED || cancelRequested) return d;
+  rel.bytes = await installerSizeFromApi(rel);
+  if (latest && latest.value === rel) saveLatest();
+  if (cancelRequested) return { ok: false, message: '下载已取消' };
+  setJob({ total: rel.bytes });
+  return cindy.downloads.start({ id: id, url: rel.url, sha256: rel.sha256, bytes: rel.bytes });
+}
+
+// ── 查到的结果存进插件存储：插件重启也不用重新查；失败后一段时间内不反复请求 ──
+
+function validCachedRelease(s) {
+  var v = s && s.value;
+  return Boolean(
+    s && typeof s.at === 'number' && v && v.ok === true &&
+    typeof v.platformKey === 'string' && typeof v.version === 'string' &&
+    typeof v.url === 'string' && v.url.indexOf(RELEASE_DOWNLOAD_PREFIX) === 0 &&
+    typeof v.sha256 === 'string' && /^[a-f0-9]{64}$/.test(v.sha256) &&
+    typeof v.assetName === 'string' && /^[\w.-]+$/.test(v.assetName) &&
+    (v.bytes === null || (Number.isSafeInteger(v.bytes) && v.bytes > 0)),
+  );
+}
+
+function validCachedFailure(f) {
+  return Boolean(
+    f && typeof f.at === 'number' && typeof f.platformKey === 'string' &&
+    typeof f.errorCode === 'string' && typeof f.message === 'string',
+  );
+}
+
+var latestCacheLoaded = null;
+function loadLatestCache() {
+  if (!latestCacheLoaded) {
+    latestCacheLoaded = readKv().then(function (kv) {
+      var s = kv[KV_LATEST];
+      if (!latest && validCachedRelease(s)) {
+        latest = { at: s.at, value: Object.assign({ notesUrl: 'https://github.com/' + REPO + '/releases/tag/v' + s.value.version }, s.value) };
+      }
+      var f = kv[KV_LATEST_FAILURE];
+      if (!latestFailure && validCachedFailure(f)) {
+        latestFailure = { at: f.at, value: { ok: false, platformKey: f.platformKey, errorCode: f.errorCode, message: f.message } };
+      }
+    }).catch(function () {});
+  }
+  return latestCacheLoaded;
+}
+
+function saveLatest() {
+  var v = latest.value;
+  var stored = {
+    at: latest.at,
+    value: {
+      ok: true, platformKey: v.platformKey, version: v.version, url: v.url,
+      sha256: v.sha256, assetName: v.assetName, bytes: v.bytes || null,
+    },
+  };
+  var patch = {};
+  patch[KV_LATEST] = stored;
+  patch[KV_LATEST_FAILURE] = null;
+  return patchKv(patch);
+}
+
+function saveLatestFailure() {
+  var f = latestFailure;
+  var patch = {};
+  patch[KV_LATEST_FAILURE] = { at: f.at, platformKey: f.value.platformKey, errorCode: f.value.errorCode, message: f.value.message };
+  return patchKv(patch);
+}
+
+function fresh(entry, platformKey, ttl) {
+  var age = Date.now() - (entry ? entry.at : 0);
+  return Boolean(entry && entry.value.platformKey === platformKey && age >= 0 && age < ttl);
+}
+
+// 上次成功之后又失败过时，才把失败显示出来。
+function currentLatestFailure() {
+  return latestFailure && (!latest || latestFailure.at > latest.at) ? latestFailure.value : null;
+}
+
+// force：用户点了「检查更新／安装／重试」，一定重新查；其余调用优先用存下的结果。
+var latestInflight = null;
 async function checkLatest(force) {
-  if (!force && latest && Date.now() - latest.at < LATEST_TTL_MS) return latest.value;
+  await loadLatestCache();
   var det = detectInfo && detectInfo.ok ? detectInfo : await refreshDetect(false);
   if (!det.ok) return det;
   if (!det.platformKey) {
-    latestError = '这台电脑的系统没有对应的 ElyOffice 版本。';
-    return { ok: false, errorCode: 'UNSUPPORTED_PLATFORM', message: latestError };
+    return { ok: false, errorCode: 'UNSUPPORTED_PLATFORM', message: '这台电脑的系统没有对应的 ElyOffice 版本。' };
   }
-  try {
-    var body = await hostText('https://api.github.com/repos/' + REPO + '/releases/latest', 'application/vnd.github+json');
-    var release;
-    try {
-      release = JSON.parse(body);
-    } catch (e) {
-      throw bizError('NETWORK_FAILED', 'GitHub 返回的发布信息看不懂，请稍后再试。');
-    }
-    var name = 'ely-office-' + det.platformKey + '.json';
-    var manifestAsset = findAsset(release, name);
-    var signatureAsset = findAsset(release, name + '.sig');
-    if (!manifestAsset || !signatureAsset) {
-      throw bizError('UNSUPPORTED_PLATFORM', '最新版本没有提供这台电脑可用的安装包。');
-    }
-    var tokens = await Promise.all([
-      downloadSmallAsset(manifestAsset, 'manifest'),
-      downloadSmallAsset(signatureAsset, 'signature'),
-    ]);
-    var v = await nodeCall(
-      'release/verify-files',
-      { name: name, platformKey: det.platformKey },
-      { downloadTokens: { manifest: tokens[0], signature: tokens[1] } },
-    );
-    if (!v.ok) throw bizError(v.errorCode, v.message);
-    var installer = findAsset(release, v.assetName);
-    if (!installer || !Number.isSafeInteger(installer.size) || installer.size <= 0) {
-      throw bizError('MANIFEST_INVALID', '没有在 ElyOffice 发布页找到安装包的大小信息。');
-    }
-    var installerDigest = assetDigest(installer);
-    if (installerDigest && installerDigest !== v.sha256) {
-      throw bizError('CHECKSUM_MISMATCH', 'GitHub 上的安装包和 ElyOffice 官方签名清单对不上，已停止。');
-    }
-    var value = {
-      ok: true,
-      version: v.version,
-      url: v.url,
-      sha256: v.sha256,
-      assetName: v.assetName,
-      bytes: installer.size,
-      notesUrl: 'https://github.com/' + REPO + '/releases/tag/v' + v.version,
-    };
-    latest = { at: Date.now(), value: value };
-    latestError = null;
-    return value;
-  } catch (e) {
-    latestError = e.message || String(e);
-    return { ok: false, errorCode: e.errorCode || 'NETWORK_FAILED', message: latestError };
+  var key = det.platformKey;
+  if (!force) {
+    if (fresh(latest, key, LATEST_TTL_MS)) return latest.value;
+    if (fresh(latestFailure, key, LATEST_RETRY_MS)) return latestFailure.value;
   }
+  if (!latestInflight) {
+    latestInflight = fetchSignedRelease(key).then(function (value) {
+      latest = { at: Date.now(), value: value };
+      latestFailure = null;
+      saveLatest();
+      return value;
+    }, function (e) {
+      latestFailure = {
+        at: Date.now(),
+        value: { ok: false, platformKey: key, errorCode: e.errorCode || 'NETWORK_FAILED', message: e.message || String(e) },
+      };
+      saveLatestFailure();
+      return latestFailure.value;
+    }).finally(function () {
+      latestInflight = null;
+    });
+  }
+  return latestInflight;
 }
 
 // ───────────── 安装 / 更新 / 卸载 ─────────────
@@ -330,13 +474,13 @@ async function runInstall() {
       setJob({ phase: 'idle' }, true);
       return;
     }
-    var disk = await nodeCall('disk/check', { bytes: rel.bytes });
+    var disk = await nodeCall('disk/check', { bytes: rel.bytes || UNKNOWN_INSTALLER_BYTES });
     if (!disk.ok) throw fromResult(disk);
 
     var id = ('elyoffice-' + rel.version + '-' + det.platformKey).replace(/[^\w-]/g, '-');
     activeDownloadId = id;
-    setJob({ phase: 'downloading', version: rel.version, loaded: 0, total: rel.bytes, speedBps: 0 }, true);
-    var d = await cindy.downloads.start({ id: id, url: rel.url, sha256: rel.sha256, bytes: rel.bytes });
+    setJob({ phase: 'downloading', version: rel.version, loaded: 0, total: rel.bytes || null, speedBps: 0 }, true);
+    var d = await downloadInstaller(rel, id);
     activeDownloadId = null;
     if (cancelRequested) {
       setJob({ phase: 'idle' }, true);
@@ -470,9 +614,8 @@ async function handleAction(action, args) {
     await recoverJob();
     var kv = await readKv();
     autoSave = kv[KV_AUTOSAVE] === true;
-    if (!latest) {
-      checkLatest(false).then(broadcastNow);
-    }
+    // 有存下的结果就直接用，查询失败后 10 分钟内也不再请求，用户点「检查更新」才强制重查。
+    checkLatest(false).then(broadcastNow);
     return buildState();
   }
   if (action === 'check-update') {
@@ -682,6 +825,7 @@ cindy.onHostMessage(function (msg) {
 readKv().then(function (kv) {
   autoSave = kv[KV_AUTOSAVE] === true;
 });
+loadLatestCache();
 loadUiLang();
 refreshDetect(false).then(function () {
   return recoverJob();

@@ -29,6 +29,8 @@ Open **Plugins → ElyOffice** and choose **Install ElyOffice**.
 
 1. The plugin reads the latest release manifest from ElyOffice's official GitHub releases and checks its **ed25519 signature** against ElyOffice's release key. Nothing is downloaded if the signature does not match.
 2. The installer is downloaded through Cindy, with progress, retries and resume, and verified against the **SHA-256** in the signed manifest.
+
+Checking for a new version does not use the GitHub API, whose anonymous limit (60 requests an hour per network) is easily used up on shared VPN or proxy connections. The result is kept for 6 hours, and a failed check is not repeated for 10 minutes unless you ask. Only older Cindy versions, whose downloads need the exact file size up front, look up that size once through the GitHub API when you install or update.
 3. On Windows the installer runs silently for the current user, with no administrator rights and no windows. On macOS the system installer opens and asks for your password once.
 
 ElyOffice installs its apps (about 1 GB) and starts its document engines at login so files open faster. You can uninstall ElyOffice from the same page.
@@ -59,7 +61,7 @@ The AI workflow, saving rules and error handling are in the bundled manual (`man
 ## Permissions
 
 - **Runs local programs** (Node worker): detects ElyOffice, runs its installer, runs its `ely-doc` / `ely-table` / `ely-show` / `ely-mark` command line, and creates new files where you or the AI choose (never over an existing file).
-- **Network**: `github.com`, `api.github.com` and GitHub's release download hosts, to check versions and download ElyOffice.
+- **Network**: `github.com` and GitHub's release download hosts, to check versions and download ElyOffice; `api.github.com`, only on older Cindy versions, to read the installer size.
 - **Notifications**: tells you when the installation finishes.
 
 ## Development
